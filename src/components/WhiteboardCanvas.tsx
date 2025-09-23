@@ -304,16 +304,70 @@ export const WhiteboardCanvas = () => {
       
       if (isTextEditing) return;
       
-      // Check priority: if last action was copying an internal object, prioritize that
-      if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
-        e.preventDefault();
-        pasteObject();
-        return;
-      }
+      // Prefer system clipboard contents; do not prioritize internal clipboard here
       
       // Check for system clipboard images
       const items = e.clipboardData?.items;
-      if (!items) {
+      if (!items || items.length === 0) {
+        // Try async Clipboard API (may include desktop images)
+        try {
+          if ('clipboard' in navigator && 'read' in navigator.clipboard) {
+            const clipboardItems = await navigator.clipboard.read();
+            for (const clipboardItem of clipboardItems) {
+              for (const type of clipboardItem.types) {
+                if (type.startsWith('image/')) {
+                  e.preventDefault();
+                  const blob = await clipboardItem.getType(type);
+                  const { fileToDataURL } = await import('@/utils/imageUtils');
+                  const dataURL = await fileToDataURL(blob);
+                  import('fabric').then(({ FabricImage }) => {
+                    FabricImage.fromURL(dataURL).then((img) => {
+                      if (!fabricCanvas) return;
+                      const maxWidth = fabricCanvas.getWidth() * 0.8;
+                      const maxHeight = fabricCanvas.getHeight() * 0.8;
+                      if (img.width! > maxWidth || img.height! > maxHeight) {
+                        const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
+                        img.scale(scale);
+                      }
+                      let position;
+                      if (lastRightClickPosition) {
+                        const vpt = fabricCanvas.viewportTransform!;
+                        const zoom = fabricCanvas.getZoom();
+                        position = {
+                          x: (lastRightClickPosition.x - vpt[4]) / zoom,
+                          y: (lastRightClickPosition.y - vpt[5]) / zoom
+                        };
+                        setLastRightClickPosition(null);
+                      } else {
+                        position = getViewportCenter();
+                      }
+                      img.set({
+                        left: position.x - (img.width! * img.scaleX!) / 2,
+                        top: position.y - (img.height! * img.scaleY!) / 2,
+                        selectable: true,
+                        hasControls: true,
+                        hasBorders: true,
+                      });
+                      fabricCanvas.add(img);
+                      fabricCanvas.setActiveObject(img);
+                      fabricCanvas.renderAll();
+                      setSelectedObject(img);
+                      setIsDirty(true);
+                      saveState();
+                      lastClipboardSourceRef.current = 'system';
+                      toast('Image pasted!');
+                    }).catch(() => {
+                      toast('Failed to load image');
+                    });
+                  });
+                  return;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          // ignore and fall back
+        }
         // No system clipboard items, try internal clipboard
         if (copiedObjectRef.current) {
           e.preventDefault();
@@ -376,19 +430,79 @@ export const WhiteboardCanvas = () => {
                   setSelectedObject(img);
                   setIsDirty(true);
                   saveState();
-                  toast("Image pasted!");
+                  toast('Image pasted!');
                 }).catch(() => {
-                  toast("Failed to load image");
+                  toast('Failed to load image');
                 });
               });
             } catch (error) {
-              toast("Failed to load image");
+              toast('Failed to load image');
             }
           }
           return;
         }
       }
-      
+
+      // Try async Clipboard API as a fallback (desktop images, some browsers)
+      try {
+        if ('clipboard' in navigator && 'read' in navigator.clipboard) {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const clipboardItem of clipboardItems) {
+            for (const type of clipboardItem.types) {
+              if (type.startsWith('image/')) {
+                e.preventDefault();
+                const blob = await clipboardItem.getType(type);
+                const { fileToDataURL } = await import('@/utils/imageUtils');
+                const dataURL = await fileToDataURL(blob);
+                import('fabric').then(({ FabricImage }) => {
+                  FabricImage.fromURL(dataURL).then((img) => {
+                    if (!fabricCanvas) return;
+                    const maxWidth = fabricCanvas.getWidth() * 0.8;
+                    const maxHeight = fabricCanvas.getHeight() * 0.8;
+                    if (img.width! > maxWidth || img.height! > maxHeight) {
+                      const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
+                      img.scale(scale);
+                    }
+                    let position;
+                    if (lastRightClickPosition) {
+                      const vpt = fabricCanvas.viewportTransform!;
+                      const zoom = fabricCanvas.getZoom();
+                      position = {
+                        x: (lastRightClickPosition.x - vpt[4]) / zoom,
+                        y: (lastRightClickPosition.y - vpt[5]) / zoom
+                      };
+                      setLastRightClickPosition(null);
+                    } else {
+                      position = getViewportCenter();
+                    }
+                    img.set({
+                      left: position.x - (img.width! * img.scaleX!) / 2,
+                      top: position.y - (img.height! * img.scaleY!) / 2,
+                      selectable: true,
+                      hasControls: true,
+                      hasBorders: true,
+                    });
+                    fabricCanvas.add(img);
+                    fabricCanvas.setActiveObject(img);
+                    fabricCanvas.renderAll();
+                    setSelectedObject(img);
+                    setIsDirty(true);
+                    saveState();
+                    lastClipboardSourceRef.current = 'system';
+                    toast('Image pasted!');
+                  }).catch(() => {
+                    toast('Failed to load image');
+                  });
+                });
+                return;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // ignore; fall back to internal clipboard
+      }
+
       // No image found in system clipboard, try internal clipboard
       if (copiedObjectRef.current) {
         e.preventDefault();
@@ -484,16 +598,8 @@ export const WhiteboardCanvas = () => {
           cutSelectedObject();
           e.preventDefault();
           return;
-        } else if (e.key === 'v' || e.key === 'V') {
-          // Ctrl/Cmd + V = Paste - handled by global paste handler with proper priority
-          e.preventDefault();
-          // Trigger a synthetic paste event to use the same priority logic
-          const syntheticEvent = new ClipboardEvent('paste', {
-            clipboardData: new DataTransfer()
-          });
-          handleGlobalPaste(syntheticEvent);
+          // Ctrl/Cmd + V = Paste - let the native paste event handler process this
           return;
-        } else if (e.key === 'd' || e.key === 'D') {
           // Ctrl/Cmd + D = Duplicate selected object
           duplicateSelectedObject();
           e.preventDefault();
@@ -565,31 +671,8 @@ export const WhiteboardCanvas = () => {
       }
     };
     
-    // Add event listeners
-    // Context menu handler for canvas element
-    const handleCanvasContextMenu = (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const mouseEvent = e as MouseEvent;
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect && fabricCanvas) {
-        const canvasX = mouseEvent.clientX - rect.left;
-        const canvasY = mouseEvent.clientY - rect.top;
-        
-        setLastRightClickPosition({ x: canvasX, y: canvasY });
-        setContextMenu({
-          x: mouseEvent.clientX,
-          y: mouseEvent.clientY,
-          object: fabricCanvas.getActiveObject() || undefined
-        });
-      }
-    };
-
-    // Attach global context menu handler to the canvas upper element
+    // Using JSX onContextMenu on the canvas element for selection-first behavior
     const canvasElement = fabricCanvas?.upperCanvasEl;
-    if (canvasElement) {
-      canvasElement.addEventListener('contextmenu', handleCanvasContextMenu);
-    }
 
     // Close context menu on any click
     const handleGlobalClick = () => {
@@ -606,9 +689,7 @@ export const WhiteboardCanvas = () => {
     window.addEventListener('click', handleGlobalClick);
     
     return () => {
-      if (canvasElement) {
-        canvasElement.removeEventListener('contextmenu', handleCanvasContextMenu);
-      }
+      // No contextmenu listener attached; nothing to remove
       window.removeEventListener('keydown', keyHandler);
       window.removeEventListener('keyup', keyUpHandler);
       window.removeEventListener('paste', handleGlobalPaste);
@@ -1026,13 +1107,7 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, copySelectedObject]);
 
   const handleContextMenuPaste = useCallback(async () => {
-    // Check what was the last clipboard source and prioritize accordingly
-    if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
-      // If last action was copying an internal object, paste that first
-      pasteObject();
-      lastClipboardSourceRef.current = 'internal';
-      return;
-    }
+    // Try to get clipboard items for system content first
 
     // Try to get clipboard items for system content
     try {
@@ -1174,12 +1249,16 @@ export const WhiteboardCanvas = () => {
             e.stopPropagation();
             
             if (fabricCanvas) {
+              const rect = canvasRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const canvasX = e.clientX - rect.left;
+              const canvasY = e.clientY - rect.top;
+
               // Temporarily disable skipTargetFind to ensure we can find objects
               const originalSkipTargetFind = fabricCanvas.skipTargetFind;
               fabricCanvas.skipTargetFind = false;
               
               // Use fabric canvas event system for better accuracy
-              const pointer = fabricCanvas.getPointer(e.nativeEvent);
               const target = fabricCanvas.findTarget(e.nativeEvent);
               
               // Restore original skipTargetFind setting
@@ -1192,7 +1271,7 @@ export const WhiteboardCanvas = () => {
                 fabricCanvas.renderAll();
                 
                 // Show context menu for object
-                setLastRightClickPosition({ x: pointer.x, y: pointer.y });
+                setLastRightClickPosition({ x: canvasX, y: canvasY });
                 setContextMenu({
                   x: e.clientX,
                   y: e.clientY,
@@ -1204,7 +1283,7 @@ export const WhiteboardCanvas = () => {
                 setSelectedObject(null);
                 fabricCanvas.renderAll();
                 
-                setLastRightClickPosition({ x: pointer.x, y: pointer.y });
+                setLastRightClickPosition({ x: canvasX, y: canvasY });
                 setContextMenu({
                   x: e.clientX,
                   y: e.clientY,
