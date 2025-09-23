@@ -1117,7 +1117,45 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, copySelectedObject]);
 
   const handleContextMenuPaste = useCallback(async () => {
-    const success = await pasteFromSources(true); // Use right-click position for context menu
+    // For context menu, we need to access clipboard directly since we don't have clipboardEvent
+    try {
+      // First try to read clipboard directly for better desktop image support
+      if ('clipboard' in navigator && 'read' in navigator.clipboard) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const clipboardItem of clipboardItems) {
+          for (const type of clipboardItem.types) {
+            if (type.startsWith('image/')) {
+              // Found an image, create a synthetic clipboardEvent-like structure
+              const blob = await clipboardItem.getType(type);
+              const file = new File([blob], 'clipboard-image', { type });
+              
+              // Create a synthetic clipboardData structure
+              const syntheticClipboardData = {
+                items: [{
+                  type,
+                  getAsFile: () => file
+                }],
+                getData: () => ''
+              };
+              
+              // Create a synthetic clipboard event
+              const syntheticEvent = {
+                clipboardData: syntheticClipboardData
+              } as unknown as ClipboardEvent;
+              
+              // Use pasteFromSources with the synthetic event
+              const success = await pasteFromSources(true, syntheticEvent);
+              if (success) return;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Direct clipboard access failed:', error);
+    }
+    
+    // Fallback to original method
+    const success = await pasteFromSources(true);
     if (!success) {
       toast("Nothing to paste");
     }
