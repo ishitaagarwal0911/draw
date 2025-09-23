@@ -89,6 +89,7 @@ export const WhiteboardCanvas = () => {
   const copiedObjectRef = useRef<FabricObject | null>(null);
   const lastClipboardSourceRef = useRef<'internal' | 'system' | null>(null);
   const lastClipboardTimestamp = useRef<number>(0);
+  const lastPastedSignatureRef = useRef<string>('');
   
   // Alt key tracking (simplified, no duplication logic)
   const altKeyPressed = useRef(false);
@@ -349,7 +350,74 @@ export const WhiteboardCanvas = () => {
   const pasteFromSources = useCallback(async (useRightClickPosition: boolean = false, clipboardEvent?: ClipboardEvent) => {
     if (!fabricCanvas) return false;
 
-    // Priority 1: Check event.clipboardData for web/direct paste (most immediate)
+    // Helper function to generate signature for "paste once" logic
+    const generateSignature = (source: string, data: string) => `${source}:${data}`;
+
+    // Priority 1: Check for internal clipboard marker (from system clipboard text)
+    try {
+      // Check clipboard event first if available
+      let clipboardText = '';
+      if (clipboardEvent?.clipboardData) {
+        clipboardText = clipboardEvent.clipboardData.getData('text/plain') || '';
+      } else if ('clipboard' in navigator && 'readText' in navigator.clipboard) {
+        clipboardText = await navigator.clipboard.readText();
+      }
+      
+      if (clipboardText.startsWith('WBCLIP:')) {
+        const timestamp = clipboardText.replace('WBCLIP:', '');
+        const signature = generateSignature('internal', timestamp);
+        
+        // Check if we haven't already pasted this signature
+        if (signature !== lastPastedSignatureRef.current && copiedObjectRef.current) {
+          try {
+            const cloned = await copiedObjectRef.current.clone();
+            
+            // Use right-click position if available and requested, otherwise offset from original
+            let position;
+            if (useRightClickPosition && lastRightClickPosition) {
+              const vpt = fabricCanvas.viewportTransform!;
+              const zoom = fabricCanvas.getZoom();
+              position = {
+                x: (lastRightClickPosition.x - vpt[4]) / zoom,
+                y: (lastRightClickPosition.y - vpt[5]) / zoom
+              };
+              setLastRightClickPosition(null);
+            } else {
+              position = {
+                x: (cloned.left || 0) + 20,
+                y: (cloned.top || 0) + 20
+              };
+            }
+            
+            cloned.set({
+              left: position.x,
+              top: position.y,
+              evented: true,
+            });
+            
+            fabricCanvas.add(cloned);
+            fabricCanvas.setActiveObject(cloned);
+            fabricCanvas.renderAll();
+            setSelectedObject(cloned);
+            setIsDirty(true);
+            saveState();
+            
+            // Mark this signature as pasted and clear internal object for "paste once"
+            lastPastedSignatureRef.current = signature;
+            copiedObjectRef.current = null;
+            
+            toast("Object pasted");
+            return true;
+          } catch (error) {
+            console.error('Failed to paste internal object:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Could not read clipboard text:', error);
+    }
+
+    // Priority 2: Check event.clipboardData for web/direct paste images
     const items = clipboardEvent?.clipboardData?.items;
     if (items && items.length > 0) {
       for (let i = 0; i < items.length; i++) {
@@ -360,12 +428,18 @@ export const WhiteboardCanvas = () => {
             try {
               const { fileToDataURL } = await import('@/utils/imageUtils');
               const dataURL = await fileToDataURL(file);
-              const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
-              if (success) {
-                lastClipboardSourceRef.current = 'system';
-                lastClipboardTimestamp.current = Date.now();
-                toast('Image pasted!');
-                return true;
+              const signature = generateSignature('clipboard-image', dataURL.substring(0, 100)); // Use first 100 chars as signature
+              
+              // Check if we haven't already pasted this signature
+              if (signature !== lastPastedSignatureRef.current) {
+                const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
+                if (success) {
+                  lastClipboardSourceRef.current = 'system';
+                  lastClipboardTimestamp.current = Date.now();
+                  lastPastedSignatureRef.current = signature;
+                  toast('Image pasted!');
+                  return true;
+                }
               }
             } catch (error) {
               toast('Failed to load image');
@@ -375,7 +449,7 @@ export const WhiteboardCanvas = () => {
       }
     }
 
-    // Priority 2: Check system clipboard via navigator.clipboard.read() (desktop images)
+    // Priority 3: Check system clipboard via navigator.clipboard.read() (desktop images)
     try {
       if ('clipboard' in navigator && 'read' in navigator.clipboard) {
         const clipboardItems = await navigator.clipboard.read();
@@ -385,13 +459,18 @@ export const WhiteboardCanvas = () => {
               const blob = await clipboardItem.getType(type);
               const { fileToDataURL } = await import('@/utils/imageUtils');
               const dataURL = await fileToDataURL(blob);
+              const signature = generateSignature('system-image', dataURL.substring(0, 100)); // Use first 100 chars as signature
               
-              const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
-              if (success) {
-                lastClipboardSourceRef.current = 'system';
-                lastClipboardTimestamp.current = Date.now();
-                toast('Image pasted!');
-                return true;
+              // Check if we haven't already pasted this signature
+              if (signature !== lastPastedSignatureRef.current) {
+                const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
+                if (success) {
+                  lastClipboardSourceRef.current = 'system';
+                  lastClipboardTimestamp.current = Date.now();
+                  lastPastedSignatureRef.current = signature;
+                  toast('Image pasted!');
+                  return true;
+                }
               }
             }
           }
@@ -401,31 +480,8 @@ export const WhiteboardCanvas = () => {
       console.error('System clipboard access failed:', error);
     }
 
-    // Priority 3: Fall back to internal object clipboard
-    if (copiedObjectRef.current) {
-      try {
-        const cloned = await copiedObjectRef.current.clone();
-        cloned.set({
-          left: (cloned.left || 0) + 20,
-          top: (cloned.top || 0) + 20,
-          evented: true,
-        });
-        
-        fabricCanvas.add(cloned);
-        fabricCanvas.setActiveObject(cloned);
-        fabricCanvas.renderAll();
-        setSelectedObject(cloned);
-        setIsDirty(true);
-        saveState();
-        toast("Object pasted");
-        return true;
-      } catch (error) {
-        console.error('Failed to paste object:', error);
-      }
-    }
-
     return false;
-  }, [fabricCanvas, insertImageFromDataURL, saveState]);
+  }, [fabricCanvas, insertImageFromDataURL, saveState, lastRightClickPosition]);
 
   // Handle keyboard shortcuts, global paste, and drag-drop
   useEffect(() => {
@@ -538,8 +594,7 @@ export const WhiteboardCanvas = () => {
           cutSelectedObject();
           e.preventDefault();
           return;
-          // Ctrl/Cmd + V = Paste - let the native paste event handler process this
-          return;
+        } else if (e.key === 'd' || e.key === 'D') {
           // Ctrl/Cmd + D = Duplicate selected object
           duplicateSelectedObject();
           e.preventDefault();
@@ -887,7 +942,7 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas]);
 
   // Object manipulation functions
-  const copySelectedObject = useCallback(() => {
+  const copySelectedObject = useCallback(async () => {
     const activeObject = fabricCanvas?.getActiveObject();
     if (!activeObject) {
       toast("No object selected to copy");
@@ -897,11 +952,25 @@ export const WhiteboardCanvas = () => {
     // Store in internal clipboard for canvas-to-canvas operations (preserves vector format)
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
-    lastClipboardTimestamp.current = Date.now();
+    const timestamp = Date.now();
+    lastClipboardTimestamp.current = timestamp;
+    
+    // Reset paste signature so this can be pasted again
+    lastPastedSignatureRef.current = '';
+    
+    // Write internal marker to system clipboard so both Cmd+V and context menu recognize internal objects
+    try {
+      if ('clipboard' in navigator && 'writeText' in navigator.clipboard) {
+        await navigator.clipboard.writeText(`WBCLIP:${timestamp}`);
+      }
+    } catch (error) {
+      console.log('Could not write to system clipboard:', error);
+    }
+    
     toast("Object copied");
   }, [fabricCanvas]);
 
-  const cutSelectedObject = useCallback(() => {
+  const cutSelectedObject = useCallback(async () => {
     const activeObject = fabricCanvas?.getActiveObject();
     if (!activeObject || !fabricCanvas) {
       toast("No object selected to cut");
@@ -910,7 +979,21 @@ export const WhiteboardCanvas = () => {
     
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
-    lastClipboardTimestamp.current = Date.now();
+    const timestamp = Date.now();
+    lastClipboardTimestamp.current = timestamp;
+    
+    // Reset paste signature so this can be pasted again
+    lastPastedSignatureRef.current = '';
+    
+    // Write internal marker to system clipboard
+    try {
+      if ('clipboard' in navigator && 'writeText' in navigator.clipboard) {
+        await navigator.clipboard.writeText(`WBCLIP:${timestamp}`);
+      }
+    } catch (error) {
+      console.log('Could not write to system clipboard:', error);
+    }
+    
     fabricCanvas.remove(activeObject);
     fabricCanvas.discardActiveObject();
     fabricCanvas.renderAll();
@@ -920,29 +1003,9 @@ export const WhiteboardCanvas = () => {
     toast("Object cut");
   }, [fabricCanvas, saveState]);
 
-  const pasteObject = useCallback(() => {
-    if (!copiedObjectRef.current || !fabricCanvas) {
-      toast("Nothing to paste");
-      return;
-    }
-
-    copiedObjectRef.current.clone().then((cloned: FabricObject) => {
-      // Position the pasted object slightly offset from the original
-      cloned.set({
-        left: (cloned.left || 0) + 20,
-        top: (cloned.top || 0) + 20,
-        evented: true,
-      });
-      
-      fabricCanvas.add(cloned);
-      fabricCanvas.setActiveObject(cloned);
-      fabricCanvas.renderAll();
-      setSelectedObject(cloned);
-      setIsDirty(true);
-      saveState();
-      toast("Object pasted");
-    });
-  }, [fabricCanvas, saveState]);
+  const handleSystemClipboardPaste = useCallback(async (useRightClickPosition: boolean = false) => {
+    await pasteFromSources(useRightClickPosition);
+  }, [pasteFromSources]);
 
   const duplicateSelectedObject = useCallback(() => {
     const activeObject = fabricCanvas?.getActiveObject();
@@ -967,10 +1030,6 @@ export const WhiteboardCanvas = () => {
       toast("Object duplicated");
     });
   }, [fabricCanvas, saveState]);
-
-  const handleSystemClipboardPaste = useCallback(async () => {
-    await pasteFromSources(false);
-  }, [pasteFromSources]);
 
   const selectAllObjects = useCallback(() => {
     if (!fabricCanvas) return;
