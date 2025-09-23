@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    /* Whiteboard specific colors */
+    --canvas-background: 0 0% 98%;
+    --canvas-grid: 220 13% 85%;
+    --canvas-grid-size: 20px;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 0 0% 10%; /* #191919 */
+    --foreground: 0 0% 95%;
+
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 10%;
+
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 83%;
+
+    /* Dark mode whiteboard colors */
+    --canvas-background: 0 0% 10%;
+    --canvas-grid: 0 0% 25%;
+
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 0 0% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 0 0% 59%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Grey glassmorphism design tokens */
+:root {
+  --glass-background: 107 114 128;
+  --glass-background-opacity: 0.15;
+  --glass-border: 107 114 128;
+  --glass-border-opacity: 0.4;
+  --glass-shadow: 0 8px 32px 0;
+  --glass-shadow-color: 0 0 0;
+  --glass-shadow-opacity: 0.1;
+  --glass-backdrop-blur: 16px;
+}
+
+.dark {
+  --glass-background: 107 114 128;
+  --glass-background-opacity: 0.13;
+  --glass-border: 107 114 128;
+  --glass-border-opacity: 0.3;
+  --glass-shadow-color: 0 0 0;
+  --glass-shadow-opacity: 0.3;
+}
+
+/* Enhanced Glass panel utility class */
+.glass-panel {
+  background: linear-gradient(145deg, 
+    rgba(var(--glass-background), calc(var(--glass-background-opacity) + 0.02)), 
+    rgba(var(--glass-background), var(--glass-background-opacity))
+  );
+  backdrop-filter: blur(var(--glass-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--glass-backdrop-blur));
+  border: 0.8px solid #D3D3D3;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    var(--glass-shadow) rgba(var(--glass-shadow-color), var(--glass-shadow-opacity)),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+}
+
+.draggable-toolbar {
+  cursor: grab;
+}
+
+.draggable-toolbar:active {
+  cursor: grabbing;
+}
+
+/* Smooth transitions */
+.transition-smooth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Whiteboard canvas styles */
+.whiteboard-canvas {
+  background-color: hsl(var(--canvas-background));
+  background-image: radial-gradient(circle, hsl(var(--canvas-grid)) 1px, transparent 1px);
+  background-size: var(--canvas-grid-size) var(--canvas-grid-size);
+  cursor: crosshair;
+  background-attachment: local;
+}
+
+.dark .whiteboard-canvas {
+  background-color: #191919;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+}
+
+.whiteboard-canvas.panning {
+  cursor: grab;
+}
+
+.whiteboard-canvas.panning:active {
+  cursor: grabbing;
+}
+
+.whiteboard-canvas.selecting {
+  cursor: default;
+}
+
+/* Fabric.js canvas overrides */
+.canvas-container {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.upper-canvas {
+  background: transparent !important;
+}
+
+/* Fabric.js selection controls visibility */
+.canvas-container .fabric-object-controls {
+  visibility: visible !important;
+}
+
+.canvas-container .fabric-object-controls .control {
+  border: 2px solid #3B82F6 !important;
+  background: #3B82F6 !important;
+  border-radius: 50% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3) !important;
+}
+
+.canvas-container .fabric-object-controls .control.rotating {
+  border-radius: 0 !important;
+  width: 20px !important;
+  height: 20px !important;
+  background: #3B82F6 !important;
+  border: 2px solid #ffffff !important;
+}
+
+.canvas-container .object-selection-line {
+  stroke: #3B82F6 !important;
+  stroke-width: 2px !important;
+  stroke-dasharray: none !important;
+}
