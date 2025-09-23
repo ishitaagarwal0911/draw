@@ -43,7 +43,7 @@ export const ContextMenu = ({
 
   // Calculate position to keep menu within viewport
   const getAdjustedPosition = () => {
-    const menuWidth = 105; // Fixed menu width
+    const menuWidth = 120; // Fixed menu width
     const menuHeight = hasSelectedObject ? 280 : 120; // Approximate menu height based on items
     
     let adjustedX = x;
@@ -70,7 +70,7 @@ export const ContextMenu = ({
 
   return (
     <div
-      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg w-[105px] border border-border"
+      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg w-[120px] border border-border"
       style={position}
       onClick={(e) => e.stopPropagation()}
     >
