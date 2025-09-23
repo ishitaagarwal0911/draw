@@ -216,7 +216,7 @@ export const useEnhancedCanvasNavigation = ({
 
     const handleMouseDown = (opt: any) => {
       const evt = opt.e;
-      if (isPanning.current || evt.altKey || evt.button === 1) {
+      if (isPanning.current || evt.button === 1) {
         fabricCanvas.isDragging = true;
         fabricCanvas.selection = false;
         panStart.current = { x: evt.clientX, y: evt.clientY };
@@ -226,7 +226,7 @@ export const useEnhancedCanvasNavigation = ({
 
     const handleMouseMove = (opt: any) => {
       const evt = opt.e;
-      if (fabricCanvas.isDragging && (isPanning.current || evt.altKey)) {
+      if (fabricCanvas.isDragging && isPanning.current) {
         const vpt = fabricCanvas.viewportTransform!;
         const deltaX = evt.clientX - panStart.current.x;
         const deltaY = evt.clientY - panStart.current.y;

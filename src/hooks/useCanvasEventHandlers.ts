@@ -224,8 +224,8 @@ export const useCanvasEventHandlers = ({
       }
       
       
-      // Only allow panning if no object is selected AND alt key is not pressed for duplication
-      if (!target && (activeTool === "pan" || (evt.altKey && !fabricCanvas.getActiveObject()) || evt.button === 1)) {
+      // Only allow panning if no object is selected
+      if (!target && (activeTool === "pan" || evt.button === 1)) {
         fabricCanvas.isDragging = true;
         fabricCanvas.selection = false;
         fabricCanvas.lastPosX = evt.clientX;
@@ -245,7 +245,7 @@ export const useCanvasEventHandlers = ({
       const pointer = fabricCanvas.getPointer(evt);
       
       
-      if (fabricCanvas.isDragging && (activeTool === "pan" || evt.altKey)) {
+      if (fabricCanvas.isDragging && activeTool === "pan") {
         const vpt = fabricCanvas.viewportTransform!;
         vpt[4] += evt.clientX - fabricCanvas.lastPosX;
         vpt[5] += evt.clientY - fabricCanvas.lastPosY;

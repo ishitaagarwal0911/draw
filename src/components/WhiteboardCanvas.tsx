@@ -87,6 +87,7 @@ export const WhiteboardCanvas = () => {
   
   // Copy/paste state
   const copiedObjectRef = useRef<FabricObject | null>(null);
+  const lastClipboardSourceRef = useRef<'internal' | 'system' | null>(null);
   
   // Alt key tracking (simplified, no duplication logic)
   const altKeyPressed = useRef(false);
@@ -310,6 +311,7 @@ export const WhiteboardCanvas = () => {
         const item = items[i];
         if (item.type.startsWith('image/')) {
           e.preventDefault();
+          lastClipboardSourceRef.current = 'system';
           const file = item.getAsFile();
           if (file) {
             try {
@@ -460,14 +462,13 @@ export const WhiteboardCanvas = () => {
           e.preventDefault();
           return;
         } else if (e.key === 'v' || e.key === 'V') {
-          // Ctrl/Cmd + V = Paste object (prioritize internal clipboard for vectors)
-          if (copiedObjectRef.current) {
+          // Ctrl/Cmd + V = Paste - check last clipboard source priority
+          if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
             pasteObject();
             e.preventDefault();
             return;
           }
-          // Allow system clipboard to handle images when no internal object
-          // The global paste handler will catch image paste events
+          // Allow system clipboard to handle images when last source was system or no internal object
           return;
         } else if (e.key === 'd' || e.key === 'D') {
           // Ctrl/Cmd + D = Duplicate selected object
@@ -775,6 +776,7 @@ export const WhiteboardCanvas = () => {
     
     // Store in internal clipboard for canvas-to-canvas operations (preserves vector format)
     copiedObjectRef.current = activeObject;
+    lastClipboardSourceRef.current = 'internal';
     toast("Object copied");
   }, [fabricCanvas]);
 
@@ -786,6 +788,7 @@ export const WhiteboardCanvas = () => {
     }
     
     copiedObjectRef.current = activeObject;
+    lastClipboardSourceRef.current = 'internal';
     fabricCanvas.remove(activeObject);
     fabricCanvas.discardActiveObject();
     fabricCanvas.renderAll();
@@ -1114,28 +1117,31 @@ export const WhiteboardCanvas = () => {
             e.preventDefault();
             e.stopPropagation();
             
-            const rect = canvasRef.current?.getBoundingClientRect();
-            if (rect && fabricCanvas) {
-              const canvasX = e.clientX - rect.left;
-              const canvasY = e.clientY - rect.top;
-              
-              // Check if there's an object under the cursor
+            if (fabricCanvas) {
+              // Use fabric canvas event system for better accuracy
               const pointer = fabricCanvas.getPointer(e.nativeEvent);
               const target = fabricCanvas.findTarget(e.nativeEvent);
               
               if (target) {
-                // If object exists and is not selected, select it first
-                if (fabricCanvas.getActiveObject() !== target) {
-                  fabricCanvas.setActiveObject(target);
-                  fabricCanvas.renderAll();
-                }
+                // Select the object first
+                fabricCanvas.setActiveObject(target);
+                setSelectedObject(target);
+                fabricCanvas.renderAll();
                 
                 // Show context menu
-                setLastRightClickPosition({ x: canvasX, y: canvasY });
+                setLastRightClickPosition({ x: pointer.x, y: pointer.y });
                 setContextMenu({
                   x: e.clientX,
                   y: e.clientY,
                   object: target
+                });
+              } else {
+                // Show general context menu if no object
+                setLastRightClickPosition({ x: pointer.x, y: pointer.y });
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  object: undefined
                 });
               }
             }
