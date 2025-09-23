@@ -62,19 +62,6 @@ export const useCanvasEventHandlers = ({
   altKeyPressed
 }: UseCanvasEventHandlersProps) => {
   
-  // Track alt+drag duplication state
-  const altDragState = useRef<{
-    isDuplicating: boolean;
-    originalObject: FabricObject | null;
-    startPosition: { x: number; y: number } | null;
-    hasMoved: boolean;
-  }>({
-    isDuplicating: false,
-    originalObject: null,
-    startPosition: null,
-    hasMoved: false
-  });
-  
   // Helper function to create shapes
   const createShape = (type: ShapeType, startX: number, startY: number, endX: number, endY: number) => {
     const width = Math.abs(endX - startX);
@@ -236,17 +223,6 @@ export const useCanvasEventHandlers = ({
         return;
       }
       
-      // Handle Alt+drag duplication setup
-      if (target && altKeyPressed.current && activeTool === "select") {
-        altDragState.current = {
-          isDuplicating: false,
-          originalObject: target,
-          startPosition: { x: pointer.x, y: pointer.y },
-          hasMoved: false
-        };
-        // Don't proceed with normal selection/panning
-        return;
-      }
       
       // Only allow panning if no object is selected AND alt key is not pressed for duplication
       if (!target && (activeTool === "pan" || (evt.altKey && !fabricCanvas.getActiveObject()) || evt.button === 1)) {
@@ -268,44 +244,6 @@ export const useCanvasEventHandlers = ({
       const evt = opt.e;
       const pointer = fabricCanvas.getPointer(evt);
       
-      // Handle Alt+drag duplication
-      if (altKeyPressed.current && altDragState.current.originalObject && altDragState.current.startPosition) {
-        const distance = Math.sqrt(
-          Math.pow(pointer.x - altDragState.current.startPosition.x, 2) + 
-          Math.pow(pointer.y - altDragState.current.startPosition.y, 2)
-        );
-        
-        // Only start duplication if user has dragged at least 5 pixels
-        if (distance > 5 && !altDragState.current.isDuplicating) {
-          altDragState.current.isDuplicating = true;
-          altDragState.current.hasMoved = true;
-          
-          // Clone the object
-          altDragState.current.originalObject.clone().then((cloned: FabricObject) => {
-            cloned.set({
-              left: pointer.x - ((altDragState.current.originalObject?.width || 0) / 2),
-              top: pointer.y - ((altDragState.current.originalObject?.height || 0) / 2),
-            });
-            fabricCanvas.add(cloned);
-            fabricCanvas.setActiveObject(cloned);
-            fabricCanvas.renderAll();
-            onSelectedObjectChange(cloned);
-            onDirtyChange(true);
-            
-            // Replace the original object reference with the clone for continued dragging
-            altDragState.current.originalObject = cloned;
-          });
-        } else if (altDragState.current.isDuplicating && altDragState.current.originalObject) {
-          // Continue moving the duplicated object
-          altDragState.current.originalObject.set({
-            left: pointer.x - ((altDragState.current.originalObject?.width || 0) / 2),
-            top: pointer.y - ((altDragState.current.originalObject?.height || 0) / 2),
-          });
-          altDragState.current.originalObject.setCoords();
-          fabricCanvas.renderAll();
-        }
-        return;
-      }
       
       if (fabricCanvas.isDragging && (activeTool === "pan" || evt.altKey)) {
         const vpt = fabricCanvas.viewportTransform!;
@@ -358,25 +296,6 @@ export const useCanvasEventHandlers = ({
     };
 
     const handleMouseUp = (opt: any) => {
-      // Handle Alt+drag duplication completion
-      if (altDragState.current.isDuplicating) {
-        saveState();
-        altDragState.current = {
-          isDuplicating: false,
-          originalObject: null,
-          startPosition: null,
-          hasMoved: false
-        };
-        return;
-      } else if (altDragState.current.originalObject && !altDragState.current.hasMoved) {
-        // Alt was held but no drag occurred - reset state
-        altDragState.current = {
-          isDuplicating: false,
-          originalObject: null,
-          startPosition: null,
-          hasMoved: false
-        };
-      }
       
       if (fabricCanvas.isDragging) {
         fabricCanvas.setViewportTransform(fabricCanvas.viewportTransform!);

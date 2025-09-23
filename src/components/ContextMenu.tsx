@@ -30,16 +30,13 @@ export const ContextMenu = ({
   hasSelectedObject = false 
 }: ContextMenuProps) => {
   useEffect(() => {
-    const handleClickOutside = () => onClose();
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
 
-    document.addEventListener("click", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener("click", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
