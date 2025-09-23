@@ -89,6 +89,7 @@ export const WhiteboardCanvas = () => {
   const copiedObjectRef = useRef<FabricObject | null>(null);
   const lastClipboardSourceRef = useRef<'internal' | 'system' | null>(null);
   const lastClipboardTimestamp = useRef<number>(0);
+  const systemClipboardConsumedRef = useRef<boolean>(false);
   
   // Alt key tracking (simplified, no duplication logic)
   const altKeyPressed = useRef(false);
@@ -292,11 +293,127 @@ export const WhiteboardCanvas = () => {
     return { x: centerX, y: centerY };
   }, [fabricCanvas]);
 
+  // Helper function to insert image from data URL
+  const insertImageFromDataURL = useCallback(async (dataURL: string, useRightClickPosition: boolean = false) => {
+    if (!fabricCanvas) return;
+
+    try {
+      const { FabricImage } = await import('fabric');
+      const img = await FabricImage.fromURL(dataURL);
+      
+      // Scale image to fit canvas if too large
+      const maxWidth = fabricCanvas.getWidth() * 0.8;
+      const maxHeight = fabricCanvas.getHeight() * 0.8;
+      
+      if (img.width! > maxWidth || img.height! > maxHeight) {
+        const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
+        img.scale(scale);
+      }
+      
+      // Use right-click position if available and requested, otherwise center in viewport
+      let position;
+      if (useRightClickPosition && lastRightClickPosition) {
+        const vpt = fabricCanvas.viewportTransform!;
+        const zoom = fabricCanvas.getZoom();
+        position = {
+          x: (lastRightClickPosition.x - vpt[4]) / zoom,
+          y: (lastRightClickPosition.y - vpt[5]) / zoom
+        };
+        setLastRightClickPosition(null); // Clear after use
+      } else {
+        position = getViewportCenter();
+      }
+      
+      img.set({
+        left: position.x - (img.width! * img.scaleX!) / 2,
+        top: position.y - (img.height! * img.scaleY!) / 2,
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+      });
+      
+      fabricCanvas.add(img);
+      fabricCanvas.setActiveObject(img);
+      fabricCanvas.renderAll();
+      setSelectedObject(img);
+      setIsDirty(true);
+      saveState();
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to insert image:', error);
+      return false;
+    }
+  }, [fabricCanvas, lastRightClickPosition, getViewportCenter, saveState]);
+
+  // Unified paste function that handles all sources with proper priority
+  const pasteFromSources = useCallback(async (useRightClickPosition: boolean = false) => {
+    if (!fabricCanvas) return false;
+
+    // Priority 1: Check event.clipboardData for web/direct paste (most immediate)
+    // This will be handled by the calling function if available
+
+    // Priority 2: Check system clipboard via navigator.clipboard.read() (desktop images)
+    // Only if not already consumed for this copy operation
+    if (!systemClipboardConsumedRef.current) {
+      try {
+        if ('clipboard' in navigator && 'read' in navigator.clipboard) {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const clipboardItem of clipboardItems) {
+            for (const type of clipboardItem.types) {
+              if (type.startsWith('image/')) {
+                const blob = await clipboardItem.getType(type);
+                const { fileToDataURL } = await import('@/utils/imageUtils');
+                const dataURL = await fileToDataURL(blob);
+                
+                const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
+                if (success) {
+                  lastClipboardSourceRef.current = 'system';
+                  lastClipboardTimestamp.current = Date.now();
+                  systemClipboardConsumedRef.current = true; // Mark as consumed
+                  toast('Image pasted!');
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('System clipboard access failed:', error);
+      }
+    }
+
+    // Priority 3: Fall back to internal object clipboard
+    if (copiedObjectRef.current) {
+      try {
+        const cloned = await copiedObjectRef.current.clone();
+        cloned.set({
+          left: (cloned.left || 0) + 20,
+          top: (cloned.top || 0) + 20,
+          evented: true,
+        });
+        
+        fabricCanvas.add(cloned);
+        fabricCanvas.setActiveObject(cloned);
+        fabricCanvas.renderAll();
+        setSelectedObject(cloned);
+        setIsDirty(true);
+        saveState();
+        toast("Object pasted");
+        return true;
+      } catch (error) {
+        console.error('Failed to paste object:', error);
+      }
+    }
+
+    return false;
+  }, [fabricCanvas, insertImageFromDataURL, saveState]);
+
   // Handle keyboard shortcuts, global paste, and drag-drop
   useEffect(() => {
     if (!fabricCanvas) return;
     
-    // Global paste handler with improved priority logic
+    // Global paste handler - unified logic
     const handleGlobalPaste = async (e: ClipboardEvent) => {
       // Don't interfere with text editing
       const isTextEditing = (fabricCanvas?.getActiveObject() as any)?.isEditing === true ||
@@ -304,18 +421,8 @@ export const WhiteboardCanvas = () => {
                            (document.activeElement as HTMLElement)?.contentEditable === 'true';
       
       if (isTextEditing) return;
-      
-      // Priority logic: Check what was copied last
-      // If last source was 'internal' and we have an object, paste it immediately
-      if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
-        e.preventDefault();
-        pasteObject();
-        return;
-      }
-      
-      // Otherwise, check system clipboard first, then fall back to internal
-      
-      // Check for system clipboard images via ClipboardEvent
+
+      // Check for direct image paste from event.clipboardData first (web images, drag-drop)
       const items = e.clipboardData?.items;
       if (items && items.length > 0) {
         for (let i = 0; i < items.length; i++) {
@@ -325,58 +432,15 @@ export const WhiteboardCanvas = () => {
             const file = item.getAsFile();
             if (file) {
               try {
-                // Convert to data URL for persistence
                 const { fileToDataURL } = await import('@/utils/imageUtils');
                 const dataURL = await fileToDataURL(file);
-                
-                import('fabric').then(({ FabricImage }) => {
-                  FabricImage.fromURL(dataURL).then((img) => {
-                    if (!fabricCanvas) return;
-                    
-                    // Scale image to fit canvas if too large
-                    const maxWidth = fabricCanvas.getWidth() * 0.8;
-                    const maxHeight = fabricCanvas.getHeight() * 0.8;
-                    
-                    if (img.width! > maxWidth || img.height! > maxHeight) {
-                      const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
-                      img.scale(scale);
-                    }
-                    
-                    // Use right-click position if available, otherwise center in viewport
-                    let position;
-                    if (lastRightClickPosition) {
-                      const vpt = fabricCanvas.viewportTransform!;
-                      const zoom = fabricCanvas.getZoom();
-                      position = {
-                        x: (lastRightClickPosition.x - vpt[4]) / zoom,
-                        y: (lastRightClickPosition.y - vpt[5]) / zoom
-                      };
-                      setLastRightClickPosition(null); // Clear after use
-                    } else {
-                      position = getViewportCenter();
-                    }
-                    
-                    img.set({
-                      left: position.x - (img.width! * img.scaleX!) / 2,
-                      top: position.y - (img.height! * img.scaleY!) / 2,
-                      selectable: true,
-                      hasControls: true,
-                      hasBorders: true,
-                    });
-                    
-                    fabricCanvas.add(img);
-                    fabricCanvas.setActiveObject(img);
-                    fabricCanvas.renderAll();
-                    setSelectedObject(img);
-                    setIsDirty(true);
-                    saveState();
-                    lastClipboardSourceRef.current = 'system';
-                    lastClipboardTimestamp.current = Date.now();
-                    toast('Image pasted!');
-                  }).catch(() => {
-                    toast('Failed to load image');
-                  });
-                });
+                const success = await insertImageFromDataURL(dataURL, false);
+                if (success) {
+                  lastClipboardSourceRef.current = 'system';
+                  lastClipboardTimestamp.current = Date.now();
+                  systemClipboardConsumedRef.current = true; // Mark as consumed
+                  toast('Image pasted!');
+                }
               } catch (error) {
                 toast('Failed to load image');
               }
@@ -386,73 +450,9 @@ export const WhiteboardCanvas = () => {
         }
       }
 
-      // Try async Clipboard API as a fallback (desktop images, some browsers)
-      try {
-        if ('clipboard' in navigator && 'read' in navigator.clipboard) {
-          const clipboardItems = await navigator.clipboard.read();
-          for (const clipboardItem of clipboardItems) {
-            for (const type of clipboardItem.types) {
-              if (type.startsWith('image/')) {
-                e.preventDefault();
-                const blob = await clipboardItem.getType(type);
-                const { fileToDataURL } = await import('@/utils/imageUtils');
-                const dataURL = await fileToDataURL(blob);
-                import('fabric').then(({ FabricImage }) => {
-                  FabricImage.fromURL(dataURL).then((img) => {
-                    if (!fabricCanvas) return;
-                    const maxWidth = fabricCanvas.getWidth() * 0.8;
-                    const maxHeight = fabricCanvas.getHeight() * 0.8;
-                    if (img.width! > maxWidth || img.height! > maxHeight) {
-                      const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
-                      img.scale(scale);
-                    }
-                    let position;
-                    if (lastRightClickPosition) {
-                      const vpt = fabricCanvas.viewportTransform!;
-                      const zoom = fabricCanvas.getZoom();
-                      position = {
-                        x: (lastRightClickPosition.x - vpt[4]) / zoom,
-                        y: (lastRightClickPosition.y - vpt[5]) / zoom
-                      };
-                      setLastRightClickPosition(null);
-                    } else {
-                      position = getViewportCenter();
-                    }
-                    img.set({
-                      left: position.x - (img.width! * img.scaleX!) / 2,
-                      top: position.y - (img.height! * img.scaleY!) / 2,
-                      selectable: true,
-                      hasControls: true,
-                      hasBorders: true,
-                    });
-                    fabricCanvas.add(img);
-                    fabricCanvas.setActiveObject(img);
-                    fabricCanvas.renderAll();
-                    setSelectedObject(img);
-                    setIsDirty(true);
-                    saveState();
-                    lastClipboardSourceRef.current = 'system';
-                    lastClipboardTimestamp.current = Date.now();
-                    toast('Image pasted!');
-                  }).catch(() => {
-                    toast('Failed to load image');
-                  });
-                });
-                return;
-              }
-            }
-          }
-        }
-      } catch (err) {
-        // ignore; fall back to internal clipboard
-      }
-
-      // No image found in system clipboard, try internal clipboard
-      if (copiedObjectRef.current) {
-        e.preventDefault();
-        pasteObject();
-        lastClipboardSourceRef.current = 'internal';
-      }
+      // Use unified paste logic for other sources
+      e.preventDefault();
+      await pasteFromSources(false);
     };
     
     // Drag and drop handler
@@ -501,15 +501,16 @@ export const WhiteboardCanvas = () => {
                 hasBorders: true,
               });
               
-               fabricCanvas.add(img);
-               fabricCanvas.setActiveObject(img);
-                 fabricCanvas.renderAll();
-                 setSelectedObject(img);
-                 setIsDirty(true);
-                 saveState();
-                 lastClipboardSourceRef.current = 'system';
-                 lastClipboardTimestamp.current = Date.now();
-                 toast("Image added!");
+                fabricCanvas.add(img);
+                fabricCanvas.setActiveObject(img);
+                fabricCanvas.renderAll();
+                setSelectedObject(img);
+                setIsDirty(true);
+                saveState();
+                lastClipboardSourceRef.current = 'system';
+                lastClipboardTimestamp.current = Date.now();
+                systemClipboardConsumedRef.current = false; // Reset for drag and drop
+                toast("Image added!");
               }).catch(() => {
                 toast("Failed to load image");
               });
@@ -904,6 +905,7 @@ export const WhiteboardCanvas = () => {
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
     lastClipboardTimestamp.current = Date.now();
+    systemClipboardConsumedRef.current = false; // Reset system clipboard consumption
     toast("Object copied");
   }, [fabricCanvas]);
 
@@ -917,6 +919,7 @@ export const WhiteboardCanvas = () => {
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
     lastClipboardTimestamp.current = Date.now();
+    systemClipboardConsumedRef.current = false; // Reset system clipboard consumption
     fabricCanvas.remove(activeObject);
     fabricCanvas.discardActiveObject();
     fabricCanvas.renderAll();
@@ -975,77 +978,8 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, saveState]);
 
   const handleSystemClipboardPaste = useCallback(async () => {
-    if (!fabricCanvas) return;
-
-    try {
-      const clipboardItems = await navigator.clipboard.read();
-      
-      for (const clipboardItem of clipboardItems) {
-        for (const type of clipboardItem.types) {
-          if (type.startsWith('image/')) {
-            const blob = await clipboardItem.getType(type);
-            const { fileToDataURL } = await import('@/utils/imageUtils');
-            const dataURL = await fileToDataURL(blob);
-            
-            import('fabric').then(({ FabricImage }) => {
-              FabricImage.fromURL(dataURL).then((img) => {
-                if (!fabricCanvas) return;
-                
-                // Scale image to fit canvas if too large
-                const maxWidth = fabricCanvas.getWidth() * 0.8;
-                const maxHeight = fabricCanvas.getHeight() * 0.8;
-                
-                if (img.width! > maxWidth || img.height! > maxHeight) {
-                  const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
-                  img.scale(scale);
-                }
-                
-                // Position at viewport center
-                const position = getViewportCenter();
-                img.set({
-                  left: position.x - (img.width! * img.scaleX!) / 2,
-                  top: position.y - (img.height! * img.scaleY!) / 2,
-                  selectable: true,
-                  hasControls: true,
-                  hasBorders: true,
-                });
-                
-                 fabricCanvas.add(img);
-                 fabricCanvas.setActiveObject(img);
-                 fabricCanvas.renderAll();
-                 setSelectedObject(img);
-                 setIsDirty(true);
-                 saveState();
-                 lastClipboardSourceRef.current = 'system';
-                 lastClipboardTimestamp.current = Date.now();
-                 toast("Image pasted from clipboard!");
-              }).catch(() => {
-                toast("Failed to load image");
-              });
-            });
-            return;
-          }
-        }
-      }
-      
-      // Check for text content as well
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text && text.trim()) {
-          console.log('Found text in clipboard:', text);
-        }
-      } catch (textError) {
-        console.log('No text in clipboard');
-      }
-      
-      // If no image found, fall back to internal object clipboard
-      pasteObject();
-    } catch (error) {
-      console.error('Clipboard error:', error);
-      // Fall back to internal object clipboard
-      pasteObject();
-    }
-  }, [fabricCanvas, getViewportCenter, saveState, pasteObject]);
+    await pasteFromSources(false);
+  }, [pasteFromSources]);
 
   const selectAllObjects = useCallback(() => {
     if (!fabricCanvas) return;
@@ -1133,90 +1067,11 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, copySelectedObject]);
 
   const handleContextMenuPaste = useCallback(async () => {
-    // Try to get clipboard items for system content first
-
-    // Try to get clipboard items for system content
-    try {
-      const clipboardItems = await navigator.clipboard.read();
-      for (const clipboardItem of clipboardItems) {
-        for (const type of clipboardItem.types) {
-          if (type.startsWith('image/')) {
-            const blob = await clipboardItem.getType(type);
-            // Convert to data URL for persistence
-            const { fileToDataURL } = await import('@/utils/imageUtils');
-            const dataURL = await fileToDataURL(blob);
-            
-            import('fabric').then(({ FabricImage }) => {
-              FabricImage.fromURL(dataURL).then((img) => {
-                if (!fabricCanvas) return;
-                
-                // Scale image to fit canvas if too large
-                const maxWidth = fabricCanvas.getWidth() * 0.8;
-                const maxHeight = fabricCanvas.getHeight() * 0.8;
-                
-                if (img.width! > maxWidth || img.height! > maxHeight) {
-                  const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
-                  img.scale(scale);
-                }
-                
-                // Use right-click position if available, otherwise center in viewport
-                let position;
-                if (lastRightClickPosition) {
-                  const vpt = fabricCanvas.viewportTransform!;
-                  const zoom = fabricCanvas.getZoom();
-                  position = {
-                    x: (lastRightClickPosition.x - vpt[4]) / zoom,
-                    y: (lastRightClickPosition.y - vpt[5]) / zoom
-                  };
-                  setLastRightClickPosition(null); // Clear after use
-                } else {
-                  position = getViewportCenter();
-                }
-                
-                img.set({
-                  left: position.x - (img.width! * img.scaleX!) / 2,
-                  top: position.y - (img.height! * img.scaleY!) / 2,
-                  selectable: true,
-                  hasControls: true,
-                  hasBorders: true,
-                });
-                
-                 fabricCanvas.add(img);
-                 fabricCanvas.setActiveObject(img);
-                 fabricCanvas.renderAll();
-                 setSelectedObject(img);
-                 setIsDirty(true);
-                 saveState();
-                 lastClipboardSourceRef.current = 'system';
-                 lastClipboardTimestamp.current = Date.now();
-                 toast("Image pasted!");
-              }).catch(() => {
-                toast("Failed to load image");
-              });
-            });
-            return;
-          }
-        }
-      }
-      
-      // If no system image found but we have an internal object, paste that instead
-      if (copiedObjectRef.current) {
-        pasteObject();
-        lastClipboardSourceRef.current = 'internal';
-      } else {
-        toast("Nothing to paste");
-      }
-    } catch (error) {
-      console.error('Clipboard paste error:', error);
-      // Fall back to internal clipboard if system clipboard fails
-      if (copiedObjectRef.current) {
-        pasteObject();
-        lastClipboardSourceRef.current = 'internal';
-      } else {
-        toast("Nothing to paste");
-      }
+    const success = await pasteFromSources(true); // Use right-click position for context menu
+    if (!success) {
+      toast("Nothing to paste");
     }
-  }, [fabricCanvas, lastRightClickPosition, getViewportCenter, saveState, pasteObject]);
+  }, [pasteFromSources]);
 
   const handleContextMenuDownload = useCallback(() => {
     handleExport();
