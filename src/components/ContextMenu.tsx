@@ -43,7 +43,7 @@ export const ContextMenu = ({
 
   // Calculate position to keep menu within viewport
   const getAdjustedPosition = () => {
-    const menuWidth = 120; // Fixed menu width
+    const menuWidth = 150; // Fixed menu width
     const menuHeight = hasSelectedObject ? 280 : 120; // Approximate menu height based on items
     
     let adjustedX = x;
