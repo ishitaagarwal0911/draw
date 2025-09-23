@@ -304,8 +304,24 @@ export const WhiteboardCanvas = () => {
       
       if (isTextEditing) return;
       
+      // Check priority: if last action was copying an internal object, prioritize that
+      if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
+        e.preventDefault();
+        pasteObject();
+        return;
+      }
+      
+      // Check for system clipboard images
       const items = e.clipboardData?.items;
-      if (!items) return;
+      if (!items) {
+        // No system clipboard items, try internal clipboard
+        if (copiedObjectRef.current) {
+          e.preventDefault();
+          pasteObject();
+          lastClipboardSourceRef.current = 'internal';
+        }
+        return;
+      }
       
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -371,6 +387,13 @@ export const WhiteboardCanvas = () => {
           }
           return;
         }
+      }
+      
+      // No image found in system clipboard, try internal clipboard
+      if (copiedObjectRef.current) {
+        e.preventDefault();
+        pasteObject();
+        lastClipboardSourceRef.current = 'internal';
       }
     };
     
@@ -462,13 +485,13 @@ export const WhiteboardCanvas = () => {
           e.preventDefault();
           return;
         } else if (e.key === 'v' || e.key === 'V') {
-          // Ctrl/Cmd + V = Paste - check last clipboard source priority
-          if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
-            pasteObject();
-            e.preventDefault();
-            return;
-          }
-          // Allow system clipboard to handle images when last source was system or no internal object
+          // Ctrl/Cmd + V = Paste - handled by global paste handler with proper priority
+          e.preventDefault();
+          // Trigger a synthetic paste event to use the same priority logic
+          const syntheticEvent = new ClipboardEvent('paste', {
+            clipboardData: new DataTransfer()
+          });
+          handleGlobalPaste(syntheticEvent);
           return;
         } else if (e.key === 'd' || e.key === 'D') {
           // Ctrl/Cmd + D = Duplicate selected object
@@ -1003,7 +1026,15 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, copySelectedObject]);
 
   const handleContextMenuPaste = useCallback(async () => {
-    // Try to get clipboard items and create a proper paste event
+    // Check what was the last clipboard source and prioritize accordingly
+    if (lastClipboardSourceRef.current === 'internal' && copiedObjectRef.current) {
+      // If last action was copying an internal object, paste that first
+      pasteObject();
+      lastClipboardSourceRef.current = 'internal';
+      return;
+    }
+
+    // Try to get clipboard items for system content
     try {
       const clipboardItems = await navigator.clipboard.read();
       for (const clipboardItem of clipboardItems) {
@@ -1055,6 +1086,7 @@ export const WhiteboardCanvas = () => {
                 setSelectedObject(img);
                 setIsDirty(true);
                 saveState();
+                lastClipboardSourceRef.current = 'system';
                 toast("Image pasted!");
               }).catch(() => {
                 toast("Failed to load image");
@@ -1064,12 +1096,25 @@ export const WhiteboardCanvas = () => {
           }
         }
       }
-      toast("No image found in clipboard");
+      
+      // If no system image found but we have an internal object, paste that instead
+      if (copiedObjectRef.current) {
+        pasteObject();
+        lastClipboardSourceRef.current = 'internal';
+      } else {
+        toast("Nothing to paste");
+      }
     } catch (error) {
       console.error('Clipboard paste error:', error);
-      toast("Nothing to paste or paste not supported");
+      // Fall back to internal clipboard if system clipboard fails
+      if (copiedObjectRef.current) {
+        pasteObject();
+        lastClipboardSourceRef.current = 'internal';
+      } else {
+        toast("Nothing to paste");
+      }
     }
-  }, [fabricCanvas, lastRightClickPosition, getViewportCenter, saveState]);
+  }, [fabricCanvas, lastRightClickPosition, getViewportCenter, saveState, pasteObject]);
 
   const handleContextMenuDownload = useCallback(() => {
     handleExport();
@@ -1091,15 +1136,26 @@ export const WhiteboardCanvas = () => {
               const canvasX = e.clientX - rect.left;
               const canvasY = e.clientY - rect.top;
               
+              // Temporarily disable skipTargetFind to ensure we can find objects
+              const originalSkipTargetFind = fabricCanvas.skipTargetFind;
+              fabricCanvas.skipTargetFind = false;
+              
               // Check if there's an object under the cursor
               const target = fabricCanvas.findTarget(e.nativeEvent);
               
+              // Restore original skipTargetFind setting
+              fabricCanvas.skipTargetFind = originalSkipTargetFind;
+              
               if (target) {
-                // If object exists and is not selected, select it first
-                if (fabricCanvas.getActiveObject() !== target) {
-                  fabricCanvas.setActiveObject(target);
-                  fabricCanvas.renderAll();
-                }
+                // Select the object first, then show context menu
+                fabricCanvas.setActiveObject(target);
+                setSelectedObject(target);
+                fabricCanvas.renderAll();
+              } else {
+                // Clear selection if clicking on empty canvas
+                fabricCanvas.discardActiveObject();
+                setSelectedObject(null);
+                fabricCanvas.renderAll();
               }
               
               setLastRightClickPosition({ x: canvasX, y: canvasY });
@@ -1118,9 +1174,16 @@ export const WhiteboardCanvas = () => {
             e.stopPropagation();
             
             if (fabricCanvas) {
+              // Temporarily disable skipTargetFind to ensure we can find objects
+              const originalSkipTargetFind = fabricCanvas.skipTargetFind;
+              fabricCanvas.skipTargetFind = false;
+              
               // Use fabric canvas event system for better accuracy
               const pointer = fabricCanvas.getPointer(e.nativeEvent);
               const target = fabricCanvas.findTarget(e.nativeEvent);
+              
+              // Restore original skipTargetFind setting
+              fabricCanvas.skipTargetFind = originalSkipTargetFind;
               
               if (target) {
                 // Select the object first
@@ -1128,7 +1191,7 @@ export const WhiteboardCanvas = () => {
                 setSelectedObject(target);
                 fabricCanvas.renderAll();
                 
-                // Show context menu
+                // Show context menu for object
                 setLastRightClickPosition({ x: pointer.x, y: pointer.y });
                 setContextMenu({
                   x: e.clientX,
@@ -1136,7 +1199,11 @@ export const WhiteboardCanvas = () => {
                   object: target
                 });
               } else {
-                // Show general context menu if no object
+                // Clear selection and show general context menu if no object
+                fabricCanvas.discardActiveObject();
+                setSelectedObject(null);
+                fabricCanvas.renderAll();
+                
                 setLastRightClickPosition({ x: pointer.x, y: pointer.y });
                 setContextMenu({
                   x: e.clientX,

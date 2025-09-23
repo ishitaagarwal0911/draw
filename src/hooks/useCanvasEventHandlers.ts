@@ -224,7 +224,7 @@ export const useCanvasEventHandlers = ({
       }
       
       
-      // Only allow panning if no object is selected
+      // Only allow panning if no object is selected and not using Alt key
       if (!target && (activeTool === "pan" || evt.button === 1)) {
         fabricCanvas.isDragging = true;
         fabricCanvas.selection = false;
