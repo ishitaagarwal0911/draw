@@ -44,10 +44,37 @@ export const ContextMenu = ({
     };
   }, [onClose]);
 
+  // Calculate position to keep menu within viewport
+  const getAdjustedPosition = () => {
+    const menuWidth = 160; // Approximate menu width
+    const menuHeight = hasSelectedObject ? 280 : 120; // Approximate menu height based on items
+    
+    let adjustedX = x;
+    let adjustedY = y;
+    
+    // Check right boundary
+    if (x + menuWidth > window.innerWidth) {
+      adjustedX = window.innerWidth - menuWidth - 10;
+    }
+    
+    // Check bottom boundary
+    if (y + menuHeight > window.innerHeight) {
+      adjustedY = window.innerHeight - menuHeight - 10;
+    }
+    
+    // Ensure menu doesn't go off left or top
+    adjustedX = Math.max(10, adjustedX);
+    adjustedY = Math.max(10, adjustedY);
+    
+    return { left: adjustedX, top: adjustedY };
+  };
+
+  const position = getAdjustedPosition();
+
   return (
     <div
-      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg min-w-[120px] border border-border"
-      style={{ left: x, top: y }}
+      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg min-w-[150px] border border-border"
+      style={position}
       onClick={(e) => e.stopPropagation()}
     >
       <Button

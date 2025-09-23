@@ -514,16 +514,26 @@ export const WhiteboardCanvas = () => {
         if (activeObject.type === 'activeSelection') {
           // Handle deletion of multiple selected objects
           const activeSelection = activeObject as any;
-          const objects = activeSelection.getObjects();
-          objects.forEach((obj: any) => fabricCanvas.remove(obj));
+          const objects = [...activeSelection.getObjects()]; // Create a copy of the array
+          
+          // First discard the selection
+          fabricCanvas.discardActiveObject();
+          
+          // Then remove each object
+          objects.forEach((obj: any) => {
+            fabricCanvas.remove(obj);
+          });
+          
+          fabricCanvas.renderAll();
           toast(`${objects.length} objects deleted`);
         } else {
           // Handle deletion of single object
           fabricCanvas.remove(activeObject);
+          fabricCanvas.discardActiveObject();
+          fabricCanvas.renderAll();
           toast("Object deleted");
         }
-        fabricCanvas.discardActiveObject();
-        fabricCanvas.renderAll();
+        
         setSelectedObject(null);
         setIsDirty(true);
         saveState();
@@ -727,15 +737,88 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas]);
 
   // Object manipulation functions
-  const copySelectedObject = useCallback(() => {
+  const copySelectedObject = useCallback(async () => {
     const activeObject = fabricCanvas?.getActiveObject();
     if (!activeObject) {
       toast("No object selected to copy");
       return;
     }
     
+    // Store in internal clipboard for canvas-to-canvas operations
     copiedObjectRef.current = activeObject;
-    toast("Object copied");
+    
+    // Try to copy as image to system clipboard if it's a canvas object
+    try {
+      if (activeObject.type === 'activeSelection') {
+        // For multiple objects, create a temporary canvas with just these objects
+        const selection = activeObject as any;
+        const objects = selection.getObjects();
+        
+        // Calculate bounding box for the selection
+        const boundingRect = activeObject.getBoundingRect();
+        
+        // Create temporary canvas
+        const tempCanvas = new (await import('fabric')).Canvas(null, {
+          width: boundingRect.width + 40,
+          height: boundingRect.height + 40,
+          backgroundColor: 'transparent'
+        });
+        
+        // Clone and add objects to temp canvas
+        for (const obj of objects) {
+          const cloned = await obj.clone();
+          cloned.set({
+            left: (cloned.left || 0) - boundingRect.left + 20,
+            top: (cloned.top || 0) - boundingRect.top + 20
+          });
+          tempCanvas.add(cloned);
+        }
+        
+        tempCanvas.renderAll();
+        
+        // Export as blob and copy to clipboard
+        const dataURL = tempCanvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+        const response = await fetch(dataURL);
+        const blob = await response.blob();
+        
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        
+        tempCanvas.dispose();
+      } else {
+        // For single objects, create a canvas with just this object
+        const boundingRect = activeObject.getBoundingRect();
+        const tempCanvas = new (await import('fabric')).Canvas(null, {
+          width: boundingRect.width + 40,
+          height: boundingRect.height + 40,
+          backgroundColor: 'transparent'
+        });
+        
+        const cloned = await activeObject.clone();
+        cloned.set({
+          left: 20,
+          top: 20
+        });
+        tempCanvas.add(cloned);
+        tempCanvas.renderAll();
+        
+        const dataURL = tempCanvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+        const response = await fetch(dataURL);
+        const blob = await response.blob();
+        
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        
+        tempCanvas.dispose();
+      }
+      
+      toast("Object copied to clipboard");
+    } catch (clipboardError) {
+      // Fallback to internal clipboard only
+      toast("Object copied");
+    }
   }, [fabricCanvas]);
 
   const cutSelectedObject = useCallback(() => {
