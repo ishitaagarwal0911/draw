@@ -89,7 +89,6 @@ export const WhiteboardCanvas = () => {
   const copiedObjectRef = useRef<FabricObject | null>(null);
   const lastClipboardSourceRef = useRef<'internal' | 'system' | null>(null);
   const lastClipboardTimestamp = useRef<number>(0);
-  const systemClipboardConsumedRef = useRef<boolean>(false);
   
   // Alt key tracking (simplified, no duplication logic)
   const altKeyPressed = useRef(false);
@@ -347,40 +346,59 @@ export const WhiteboardCanvas = () => {
   }, [fabricCanvas, lastRightClickPosition, getViewportCenter, saveState]);
 
   // Unified paste function that handles all sources with proper priority
-  const pasteFromSources = useCallback(async (useRightClickPosition: boolean = false) => {
+  const pasteFromSources = useCallback(async (useRightClickPosition: boolean = false, clipboardEvent?: ClipboardEvent) => {
     if (!fabricCanvas) return false;
 
     // Priority 1: Check event.clipboardData for web/direct paste (most immediate)
-    // This will be handled by the calling function if available
+    const items = clipboardEvent?.clipboardData?.items;
+    if (items && items.length > 0) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            try {
+              const { fileToDataURL } = await import('@/utils/imageUtils');
+              const dataURL = await fileToDataURL(file);
+              const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
+              if (success) {
+                lastClipboardSourceRef.current = 'system';
+                lastClipboardTimestamp.current = Date.now();
+                toast('Image pasted!');
+                return true;
+              }
+            } catch (error) {
+              toast('Failed to load image');
+            }
+          }
+        }
+      }
+    }
 
     // Priority 2: Check system clipboard via navigator.clipboard.read() (desktop images)
-    // Only if not already consumed for this copy operation
-    if (!systemClipboardConsumedRef.current) {
-      try {
-        if ('clipboard' in navigator && 'read' in navigator.clipboard) {
-          const clipboardItems = await navigator.clipboard.read();
-          for (const clipboardItem of clipboardItems) {
-            for (const type of clipboardItem.types) {
-              if (type.startsWith('image/')) {
-                const blob = await clipboardItem.getType(type);
-                const { fileToDataURL } = await import('@/utils/imageUtils');
-                const dataURL = await fileToDataURL(blob);
-                
-                const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
-                if (success) {
-                  lastClipboardSourceRef.current = 'system';
-                  lastClipboardTimestamp.current = Date.now();
-                  systemClipboardConsumedRef.current = true; // Mark as consumed
-                  toast('Image pasted!');
-                  return true;
-                }
+    try {
+      if ('clipboard' in navigator && 'read' in navigator.clipboard) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const clipboardItem of clipboardItems) {
+          for (const type of clipboardItem.types) {
+            if (type.startsWith('image/')) {
+              const blob = await clipboardItem.getType(type);
+              const { fileToDataURL } = await import('@/utils/imageUtils');
+              const dataURL = await fileToDataURL(blob);
+              
+              const success = await insertImageFromDataURL(dataURL, useRightClickPosition);
+              if (success) {
+                lastClipboardSourceRef.current = 'system';
+                lastClipboardTimestamp.current = Date.now();
+                toast('Image pasted!');
+                return true;
               }
             }
           }
         }
-      } catch (error) {
-        console.error('System clipboard access failed:', error);
       }
+    } catch (error) {
+      console.error('System clipboard access failed:', error);
     }
 
     // Priority 3: Fall back to internal object clipboard
@@ -422,37 +440,13 @@ export const WhiteboardCanvas = () => {
       
       if (isTextEditing) return;
 
-      // Check for direct image paste from event.clipboardData first (web images, drag-drop)
-      const items = e.clipboardData?.items;
-      if (items && items.length > 0) {
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (item.type.startsWith('image/')) {
-            e.preventDefault();
-            const file = item.getAsFile();
-            if (file) {
-              try {
-                const { fileToDataURL } = await import('@/utils/imageUtils');
-                const dataURL = await fileToDataURL(file);
-                const success = await insertImageFromDataURL(dataURL, false);
-                if (success) {
-                  lastClipboardSourceRef.current = 'system';
-                  lastClipboardTimestamp.current = Date.now();
-                  systemClipboardConsumedRef.current = true; // Mark as consumed
-                  toast('Image pasted!');
-                }
-              } catch (error) {
-                toast('Failed to load image');
-              }
-            }
-            return;
-          }
-        }
-      }
-
-      // Use unified paste logic for other sources
+      // Use unified paste logic with clipboard event data
       e.preventDefault();
-      await pasteFromSources(false);
+      const success = await pasteFromSources(false, e);
+      if (!success) {
+        // Optionally show a message if nothing was pasted
+        console.log('Nothing to paste');
+      }
     };
     
     // Drag and drop handler
@@ -509,7 +503,6 @@ export const WhiteboardCanvas = () => {
                 saveState();
                 lastClipboardSourceRef.current = 'system';
                 lastClipboardTimestamp.current = Date.now();
-                systemClipboardConsumedRef.current = false; // Reset for drag and drop
                 toast("Image added!");
               }).catch(() => {
                 toast("Failed to load image");
@@ -905,7 +898,6 @@ export const WhiteboardCanvas = () => {
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
     lastClipboardTimestamp.current = Date.now();
-    systemClipboardConsumedRef.current = false; // Reset system clipboard consumption
     toast("Object copied");
   }, [fabricCanvas]);
 
@@ -919,7 +911,6 @@ export const WhiteboardCanvas = () => {
     copiedObjectRef.current = activeObject;
     lastClipboardSourceRef.current = 'internal';
     lastClipboardTimestamp.current = Date.now();
-    systemClipboardConsumedRef.current = false; // Reset system clipboard consumption
     fabricCanvas.remove(activeObject);
     fabricCanvas.discardActiveObject();
     fabricCanvas.renderAll();
