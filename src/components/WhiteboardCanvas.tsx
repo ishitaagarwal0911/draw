@@ -671,8 +671,75 @@ export const WhiteboardCanvas = () => {
       }
     };
     
-    // Using JSX onContextMenu on the canvas element for selection-first behavior
-    const canvasElement = fabricCanvas?.upperCanvasEl;
+    // Using native listeners on Fabric's upper canvas for context menu and dblclick
+    const canvasElement = fabricCanvas?.upperCanvasEl as HTMLCanvasElement | undefined;
+
+    const handleCanvasContextMenu = (e: MouseEvent) => {
+      // Skip if editing text to allow default interactions
+      const isTextEditing = (fabricCanvas?.getActiveObject() as any)?.isEditing === true ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.contentEditable === 'true';
+      if (isTextEditing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!canvasElement || !fabricCanvas) return;
+
+      const rect = canvasElement.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+
+      // Temporarily allow target finding to detect object under cursor
+      const originalSkipTargetFind = fabricCanvas.skipTargetFind;
+      fabricCanvas.skipTargetFind = false;
+      const target = fabricCanvas.findTarget(e as any);
+      fabricCanvas.skipTargetFind = originalSkipTargetFind;
+
+      if (target) {
+        fabricCanvas.setActiveObject(target);
+        setSelectedObject(target as any);
+        fabricCanvas.renderAll();
+      } else {
+        fabricCanvas.discardActiveObject();
+        setSelectedObject(null);
+        fabricCanvas.renderAll();
+      }
+
+      setLastRightClickPosition({ x: canvasX, y: canvasY });
+      setContextMenu({ x: e.clientX, y: e.clientY, object: (target as any) || undefined });
+    };
+
+    const handleCanvasDblClick = (e: MouseEvent) => {
+      const isTextEditing = (fabricCanvas?.getActiveObject() as any)?.isEditing === true ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.contentEditable === 'true';
+      if (isTextEditing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!canvasElement || !fabricCanvas) return;
+
+      const rect = canvasElement.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+
+      const originalSkipTargetFind = fabricCanvas.skipTargetFind;
+      fabricCanvas.skipTargetFind = false;
+      const target = fabricCanvas.findTarget(e as any);
+      fabricCanvas.skipTargetFind = originalSkipTargetFind;
+
+      if (target) {
+        fabricCanvas.setActiveObject(target);
+        setSelectedObject(target as any);
+        fabricCanvas.renderAll();
+        setLastRightClickPosition({ x: canvasX, y: canvasY });
+        setContextMenu({ x: e.clientX, y: e.clientY, object: target as any });
+      } else {
+        fabricCanvas.discardActiveObject();
+        setSelectedObject(null);
+        fabricCanvas.renderAll();
+        setLastRightClickPosition({ x: canvasX, y: canvasY });
+        setContextMenu({ x: e.clientX, y: e.clientY, object: undefined });
+      }
+    };
 
     // Close context menu on any click
     const handleGlobalClick = () => {
@@ -680,6 +747,12 @@ export const WhiteboardCanvas = () => {
         setContextMenu(null);
       }
     };
+
+    if (canvasElement) {
+      // Important: use non-passive to allow preventDefault
+      canvasElement.addEventListener('contextmenu', handleCanvasContextMenu, { passive: false });
+      canvasElement.addEventListener('dblclick', handleCanvasDblClick, { passive: false } as any);
+    }
 
     window.addEventListener('keydown', keyHandler);
     window.addEventListener('keyup', keyUpHandler);
@@ -689,7 +762,10 @@ export const WhiteboardCanvas = () => {
     window.addEventListener('click', handleGlobalClick);
     
     return () => {
-      // No contextmenu listener attached; nothing to remove
+      if (canvasElement) {
+        canvasElement.removeEventListener('contextmenu', handleCanvasContextMenu as any);
+        canvasElement.removeEventListener('dblclick', handleCanvasDblClick as any);
+      }
       window.removeEventListener('keydown', keyHandler);
       window.removeEventListener('keyup', keyUpHandler);
       window.removeEventListener('paste', handleGlobalPaste);
