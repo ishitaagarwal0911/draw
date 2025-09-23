@@ -464,8 +464,10 @@ export const WhiteboardCanvas = () => {
           if (copiedObjectRef.current) {
             pasteObject();
             e.preventDefault();
+            return;
           }
-          // Let browser handle system clipboard if no internal object
+          // Allow system clipboard to handle images when no internal object
+          // The global paste handler will catch image paste events
           return;
         } else if (e.key === 'd' || e.key === 'D') {
           // Ctrl/Cmd + D = Duplicate selected object
@@ -1077,37 +1079,65 @@ export const WhiteboardCanvas = () => {
         ref={canvasRef} 
         className="absolute inset-0 w-full h-full"
         onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const rect = canvasRef.current?.getBoundingClientRect();
-          if (rect && fabricCanvas) {
-            const canvasX = e.clientX - rect.left;
-            const canvasY = e.clientY - rect.top;
-            
-            setLastRightClickPosition({ x: canvasX, y: canvasY });
-            setContextMenu({
-              x: e.clientX,
-              y: e.clientY,
-              object: fabricCanvas.getActiveObject() || undefined
-            });
-          }
-        }}
-        onDoubleClick={(e) => {
-          // Handle double-click for Mac context menu
-          if (navigator.platform.includes('Mac') && !((e.nativeEvent.target as HTMLElement)?.closest('[data-text-editing]'))) {
+          // Handle right-click context menu (enhanced with object selection)
+          if (!((e.nativeEvent.target as HTMLElement)?.closest('[data-text-editing]'))) {
             e.preventDefault();
             e.stopPropagation();
             const rect = canvasRef.current?.getBoundingClientRect();
-            if (rect) {
+            if (rect && fabricCanvas) {
               const canvasX = e.clientX - rect.left;
               const canvasY = e.clientY - rect.top;
+              
+              // Check if there's an object under the cursor
+              const target = fabricCanvas.findTarget(e.nativeEvent);
+              
+              if (target) {
+                // If object exists and is not selected, select it first
+                if (fabricCanvas.getActiveObject() !== target) {
+                  fabricCanvas.setActiveObject(target);
+                  fabricCanvas.renderAll();
+                }
+              }
               
               setLastRightClickPosition({ x: canvasX, y: canvasY });
               setContextMenu({
                 x: e.clientX,
                 y: e.clientY,
-                object: fabricCanvas.getActiveObject() || undefined
+                object: target || undefined
               });
+            }
+          }
+        }}
+        onDoubleClick={(e) => {
+          // Handle double-click to select object and show context menu (all platforms)
+          if (!((e.nativeEvent.target as HTMLElement)?.closest('[data-text-editing]'))) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (rect && fabricCanvas) {
+              const canvasX = e.clientX - rect.left;
+              const canvasY = e.clientY - rect.top;
+              
+              // Check if there's an object under the cursor
+              const pointer = fabricCanvas.getPointer(e.nativeEvent);
+              const target = fabricCanvas.findTarget(e.nativeEvent);
+              
+              if (target) {
+                // If object exists and is not selected, select it first
+                if (fabricCanvas.getActiveObject() !== target) {
+                  fabricCanvas.setActiveObject(target);
+                  fabricCanvas.renderAll();
+                }
+                
+                // Show context menu
+                setLastRightClickPosition({ x: canvasX, y: canvasY });
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  object: target
+                });
+              }
             }
           }
         }}
