@@ -255,6 +255,8 @@ export const useEnhancedCanvasNavigation = ({
 
     // Attach event listeners
     const canvas = fabricCanvas.getElement();
+    if (!canvas) return; // Safety check to prevent runtime error
+    
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     // Add wheel listener to window for better trackpad support
     window.addEventListener('wheel', handleWheel, { passive: false });
