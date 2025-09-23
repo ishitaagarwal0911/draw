@@ -43,7 +43,7 @@ export const ContextMenu = ({
 
   // Calculate position to keep menu within viewport
   const getAdjustedPosition = () => {
-    const menuWidth = 160; // Approximate menu width
+    const menuWidth = 105; // Fixed menu width
     const menuHeight = hasSelectedObject ? 280 : 120; // Approximate menu height based on items
     
     let adjustedX = x;
@@ -70,14 +70,14 @@ export const ContextMenu = ({
 
   return (
     <div
-      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg min-w-[150px] border border-border"
+      className="fixed z-[99999] glass-panel p-1 rounded-lg shadow-lg w-[105px] border border-border"
       style={position}
       onClick={(e) => e.stopPropagation()}
     >
       <Button
         variant="ghost"
         size="sm"
-        className="w-full justify-start gap-2 h-8"
+        className="w-full justify-start gap-2 h-8 truncate"
         onClick={() => {
           onCopy();
           onClose();
@@ -91,7 +91,7 @@ export const ContextMenu = ({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 h-8"
+          className="w-full justify-start gap-2 h-8 truncate"
           onClick={() => {
             onCut();
             onClose();
@@ -105,7 +105,7 @@ export const ContextMenu = ({
       <Button
         variant="ghost"
         size="sm"
-        className="w-full justify-start gap-2 h-8"
+        className="w-full justify-start gap-2 h-8 truncate"
         onClick={() => {
           onPaste();
           onClose();
@@ -119,7 +119,7 @@ export const ContextMenu = ({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 h-8"
+          className="w-full justify-start gap-2 h-8 truncate"
           onClick={() => {
             onDuplicate();
             onClose();
@@ -134,7 +134,7 @@ export const ContextMenu = ({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 h-8"
+          className="w-full justify-start gap-2 h-8 truncate"
           onClick={() => {
             onBringToFront();
             onClose();
@@ -149,7 +149,7 @@ export const ContextMenu = ({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 h-8"
+          className="w-full justify-start gap-2 h-8 truncate"
           onClick={() => {
             onSendToBack();
             onClose();
@@ -163,7 +163,7 @@ export const ContextMenu = ({
       <Button
         variant="ghost"
         size="sm"
-        className="w-full justify-start gap-2 h-8"
+        className="w-full justify-start gap-2 h-8 truncate"
         onClick={() => {
           onDownload();
           onClose();
