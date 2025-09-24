@@ -32,6 +32,15 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
       const newState: CanvasState = { json, viewportTransform };
 
       setHistoryState(prev => {
+        // De-duplicate: if identical to last snapshot, skip saving
+        const last = prev.history[prev.currentIndex];
+        const isSameJSON = last?.json === json;
+        const isSameViewport = !!last && last.viewportTransform.length === viewportTransform.length &&
+          last.viewportTransform.every((v, i) => v === viewportTransform[i]);
+        if (last && isSameJSON && isSameViewport) {
+          return prev;
+        }
+
         // Drop any redo states and append the new state
         const base = prev.history.slice(0, prev.currentIndex + 1);
         const pushed = [...base, newState];

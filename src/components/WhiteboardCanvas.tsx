@@ -607,22 +607,21 @@ export const WhiteboardCanvas = () => {
         }
       }
       
-      // Undo/Redo shortcuts
+      // Undo/Redo shortcuts (normalize keys and prioritize redo)
       if ((e.ctrlKey || e.metaKey) && !isTextEditing) {
-        if (e.shiftKey && e.key === 'Z') {
-          // Ctrl/Cmd + Shift + Z = Redo
-          redo();
+        const key = e.key.toLowerCase();
+        if ((key === 'z' && e.shiftKey) || key === 'y') {
+          // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y = Redo
           e.preventDefault();
-          return;
-        } else if (e.key === 'y' || e.key === 'Y') {
-          // Ctrl/Cmd + Y = Redo
+          e.stopPropagation();
           redo();
-          e.preventDefault();
           return;
-        } else if (e.key === 'z' || e.key === 'Z') {
+        }
+        if (key === 'z') {
           // Ctrl/Cmd + Z = Undo
-          undo();
           e.preventDefault();
+          e.stopPropagation();
+          undo();
           return;
         }
       }
