@@ -17,11 +17,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: "draw-extension/build",
+      outDir: "dist",
       rollupOptions: {
-        input: {
-          newtab: path.resolve(__dirname, "src/main.tsx"),
-        },
         output: {
           entryFileNames: "[name].js",
           chunkFileNames: "[name]-[hash].js",
