@@ -13,8 +13,12 @@ interface HistoryState {
 
 export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
   const [historyState, setHistoryState] = useState<HistoryState>({ history: [], currentIndex: -1 });
+  const historyStateRef = useRef<HistoryState>({ history: [], currentIndex: -1 });
   const isUndoRedo = useRef(false);
   const MAX_HISTORY = 10;
+
+  // Keep ref in sync with state
+  historyStateRef.current = historyState;
 
   const saveState = useCallback(() => {
     if (!fabricCanvas || isUndoRedo.current) return;
@@ -40,17 +44,24 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
   }, [fabricCanvas]);
 
   const undo = useCallback(async () => {
-    if (!fabricCanvas || historyState.currentIndex <= 0) return false;
+    if (!fabricCanvas) return false;
+    
+    const currentState = historyStateRef.current;
+    if (currentState.currentIndex <= 0) return false;
 
     try {
+      console.log('Undo triggered, currentIndex:', currentState.currentIndex);
       isUndoRedo.current = true;
-      const prevState = historyState.history[historyState.currentIndex - 1];
+      const prevState = currentState.history[currentState.currentIndex - 1];
       
       await fabricCanvas.loadFromJSON(prevState.json);
       fabricCanvas.setViewportTransform(prevState.viewportTransform as [number, number, number, number, number, number]);
       fabricCanvas.renderAll();
       
-      setHistoryState(prev => ({ ...prev, currentIndex: prev.currentIndex - 1 }));
+      setHistoryState(prev => {
+        console.log('Undo: updating currentIndex from', prev.currentIndex, 'to', prev.currentIndex - 1);
+        return { ...prev, currentIndex: prev.currentIndex - 1 };
+      });
       return true;
     } catch (error) {
       console.error('Failed to undo:', error);
@@ -63,20 +74,27 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
         });
       });
     }
-  }, [fabricCanvas, historyState]);
+  }, [fabricCanvas]);
 
   const redo = useCallback(async () => {
-    if (!fabricCanvas || historyState.currentIndex >= historyState.history.length - 1) return false;
+    if (!fabricCanvas) return false;
+    
+    const currentState = historyStateRef.current;
+    if (currentState.currentIndex >= currentState.history.length - 1) return false;
 
     try {
+      console.log('Redo triggered, currentIndex:', currentState.currentIndex);
       isUndoRedo.current = true;
-      const nextState = historyState.history[historyState.currentIndex + 1];
+      const nextState = currentState.history[currentState.currentIndex + 1];
       
       await fabricCanvas.loadFromJSON(nextState.json);
       fabricCanvas.setViewportTransform(nextState.viewportTransform as [number, number, number, number, number, number]);
       fabricCanvas.renderAll();
       
-      setHistoryState(prev => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+      setHistoryState(prev => {
+        console.log('Redo: updating currentIndex from', prev.currentIndex, 'to', prev.currentIndex + 1);
+        return { ...prev, currentIndex: prev.currentIndex + 1 };
+      });
       return true;
     } catch (error) {
       console.error('Failed to redo:', error);
@@ -89,7 +107,7 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
         });
       });
     }
-  }, [fabricCanvas, historyState]);
+  }, [fabricCanvas]);
 
   const canUndo = historyState.currentIndex > 0;
   const canRedo = historyState.currentIndex < historyState.history.length - 1;
