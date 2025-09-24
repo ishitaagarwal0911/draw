@@ -1,73 +1,74 @@
-# Welcome to your Lovable project
+# Canvas by Recess Club - Chrome Extension
 
-## Project info
+Transform your new tab into an infinite whiteboard for doodling, notes, and creative thinking.
 
-**URL**: https://lovable.dev/projects/408d71c5-d51f-4d4e-b99a-83c60679bd41
+## Development
 
-## How can I edit this code?
+```bash
+# Install dependencies
+npm install
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/408d71c5-d51f-4d4e-b99a-83c60679bd41) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Development server
 npm run dev
+
+# Build extension
+npm run build
 ```
 
-**Edit a file directly in GitHub**
+## Installation as Chrome Extension
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+1. **Build the extension:**
+   ```bash
+   npm run build
+   ```
 
-**Use GitHub Codespaces**
+2. **Load in Chrome:**
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top right)
+   - Click "Load unpacked"
+   - Select the `dist/` folder
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+3. **Test:**
+   - Open a new tab in Chrome
+   - Your whiteboard should load automatically!
 
-## What technologies are used for this project?
+## Features
 
-This project is built with:
+- ✅ Infinite whiteboard canvas
+- ✅ Drawing tools (pen, shapes, text)
+- ✅ Auto-save using Chrome storage
+- ✅ Zoom and pan controls
+- ✅ Undo/redo functionality
+- ✅ Copy/paste support
+- ✅ Image drag & drop
+- ✅ Dark/light theme support
+
+## Project Structure
+
+```
+draw/
+├── public/
+│   ├── manifest.json     # Chrome extension manifest
+│   └── icons/           # Extension icons (16/48/128px)
+├── src/
+│   ├── main.tsx         # Extension entry point
+│   ├── App.tsx          # Main app component
+│   ├── newtab.css       # Extension-specific styles
+│   └── components/      # Whiteboard components
+├── index.html           # Vite HTML template
+└── vite.config.ts       # Build configuration
+```
+
+## Permissions
+
+- `storage` - For saving whiteboard state
+- `unlimitedStorage` - For large whiteboards with many elements
+
+## Technologies
 
 - Vite
 - TypeScript
 - React
-- shadcn-ui
+- Fabric.js
 - Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/408d71c5-d51f-4d4e-b99a-83c60679bd41) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- shadcn-ui
