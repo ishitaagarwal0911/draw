@@ -15,13 +15,16 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
   const [historyState, setHistoryState] = useState<HistoryState>({ history: [], currentIndex: -1 });
   const historyStateRef = useRef<HistoryState>({ history: [], currentIndex: -1 });
   const isUndoRedo = useRef(false);
-  const MAX_HISTORY = 10;
+  const suspendUntil = useRef<number>(0);
+  const MAX_HISTORY = 50;
 
   // Keep ref in sync with state
   historyStateRef.current = historyState;
 
   const saveState = useCallback(() => {
-    if (!fabricCanvas || isUndoRedo.current) return;
+    if (!fabricCanvas) return;
+    const now = Date.now();
+    if (isUndoRedo.current || now < suspendUntil.current) return;
 
     try {
       const json = JSON.stringify(fabricCanvas.toJSON());
@@ -33,10 +36,13 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
         const base = prev.history.slice(0, prev.currentIndex + 1);
         const pushed = [...base, newState];
         const trimmed = pushed.slice(-MAX_HISTORY);
-        return {
+        const next = {
           history: trimmed,
           currentIndex: trimmed.length - 1
         };
+        // Keep ref in sync immediately for consumers reading synchronously
+        historyStateRef.current = next;
+        return next;
       });
     } catch (error) {
       console.error('Failed to save canvas state:', error);
@@ -45,22 +51,27 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
 
   const undo = useCallback(async () => {
     if (!fabricCanvas) return false;
-    
+    if (isUndoRedo.current) return false;
+
     const currentState = historyStateRef.current;
     if (currentState.currentIndex <= 0) return false;
 
     try {
       console.log('Undo triggered, currentIndex:', currentState.currentIndex);
       isUndoRedo.current = true;
+      // Suspend any state saving briefly to avoid re-entrancy from Fabric events
+      suspendUntil.current = Date.now() + 300;
+
       const prevState = currentState.history[currentState.currentIndex - 1];
-      
       await fabricCanvas.loadFromJSON(prevState.json);
       fabricCanvas.setViewportTransform(prevState.viewportTransform as [number, number, number, number, number, number]);
       fabricCanvas.renderAll();
-      
+
       setHistoryState(prev => {
-        console.log('Undo: updating currentIndex from', prev.currentIndex, 'to', prev.currentIndex - 1);
-        return { ...prev, currentIndex: prev.currentIndex - 1 };
+        const next = { ...prev, currentIndex: prev.currentIndex - 1 };
+        historyStateRef.current = next;
+        console.log('Undo: updating currentIndex from', prev.currentIndex, 'to', next.currentIndex);
+        return next;
       });
       return true;
     } catch (error) {
@@ -78,6 +89,7 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
 
   const redo = useCallback(async () => {
     if (!fabricCanvas) return false;
+    if (isUndoRedo.current) return false;
     
     const currentState = historyStateRef.current;
     if (currentState.currentIndex >= currentState.history.length - 1) return false;
@@ -85,6 +97,8 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
     try {
       console.log('Redo triggered, currentIndex:', currentState.currentIndex);
       isUndoRedo.current = true;
+      // Suspend any state saving briefly to avoid re-entrancy from Fabric events
+      suspendUntil.current = Date.now() + 300;
       const nextState = currentState.history[currentState.currentIndex + 1];
       
       await fabricCanvas.loadFromJSON(nextState.json);
@@ -92,8 +106,10 @@ export const useCanvasHistory = (fabricCanvas: FabricCanvas | null) => {
       fabricCanvas.renderAll();
       
       setHistoryState(prev => {
-        console.log('Redo: updating currentIndex from', prev.currentIndex, 'to', prev.currentIndex + 1);
-        return { ...prev, currentIndex: prev.currentIndex + 1 };
+        const next = { ...prev, currentIndex: prev.currentIndex + 1 };
+        historyStateRef.current = next;
+        console.log('Redo: updating currentIndex from', prev.currentIndex, 'to', next.currentIndex);
+        return next;
       });
       return true;
     } catch (error) {
