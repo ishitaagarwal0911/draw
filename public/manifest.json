@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Canvas by Recess Club",
   "version": "1.0.0",
-  "description": "Replace new tab with an infinite canvas for doodling and notes",
+  "description": "For all your drawing needs during work meetings.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
