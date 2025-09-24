@@ -6,6 +6,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { TextPropertiesPanel } from "./TextPropertiesPanel";
 import { HorizontalTextPropertiesPanel } from "./HorizontalTextPropertiesPanel";
 import { ContextMenu } from "./ContextMenu";
+import { AutoSaveStatus } from "./AutoSaveStatus";
 import { useCanvasPersistence } from "../hooks/useCanvasPersistence";
 import { useCanvasInitialization } from "../hooks/useCanvasInitialization";
 import { useCanvasEventHandlers } from "../hooks/useCanvasEventHandlers";
@@ -226,16 +227,38 @@ export const WhiteboardCanvas = () => {
     }
   }, [activeTool, brushColor, brushSize, fabricCanvas]);
 
-  // Auto-save functionality
+  // Auto-save state
+  const [saveError, setSaveError] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   useEffect(() => {
     if (!isDirty || !fabricCanvas) return;
 
-    const timeoutId = setTimeout(() => {
-      saveCanvas(fabricCanvas);
-      setIsDirty(false);
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveCanvas(fabricCanvas);
+        setIsDirty(false);
+        setSaveError(false);
+      } catch (error) {
+        console.error("Auto-save failed:", error);
+        setSaveError(true);
+        // Retry after 5 seconds
+        setTimeout(() => {
+          setIsDirty(true);
+        }, 5000);
+      }
     }, 2000);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [isDirty, fabricCanvas, saveCanvas]);
   
   // Save initial state when canvas is ready and setup history tracking
@@ -247,21 +270,34 @@ export const WhiteboardCanvas = () => {
       saveState();
     }, 100);
     
-    // Setup history tracking for canvas events
-    const handleObjectModified = () => {
-      setTimeout(() => saveState(), 50);
+    // Setup history tracking for canvas events with debouncing to prevent excessive saves
+    let historyTimeoutId: NodeJS.Timeout | null = null;
+    
+    const debouncedSaveState = () => {
+      if (historyTimeoutId) {
+        clearTimeout(historyTimeoutId);
+      }
+      historyTimeoutId = setTimeout(() => saveState(), 100);
     };
     
-    const handleObjectAdded = () => {
-      setTimeout(() => saveState(), 50);
+    const handleObjectModified = () => {
+      debouncedSaveState();
+    };
+    
+    const handleObjectAdded = (e: any) => {
+      // Don't save history for preview shapes
+      if (e.target && e.target.selectable === false && e.target.evented === false) {
+        return;
+      }
+      debouncedSaveState();
     };
     
     const handleObjectRemoved = () => {
-      setTimeout(() => saveState(), 50);
+      debouncedSaveState();
     };
     
     const handlePathCreated = () => {
-      setTimeout(() => saveState(), 50);
+      debouncedSaveState();
     };
     
     fabricCanvas.on('object:modified', handleObjectModified);
@@ -270,6 +306,9 @@ export const WhiteboardCanvas = () => {
     fabricCanvas.on('path:created', handlePathCreated);
     
     return () => {
+      if (historyTimeoutId) {
+        clearTimeout(historyTimeoutId);
+      }
       fabricCanvas.off('object:modified', handleObjectModified);
       fabricCanvas.off('object:added', handleObjectAdded);
       fabricCanvas.off('object:removed', handleObjectRemoved);
@@ -711,27 +750,20 @@ export const WhiteboardCanvas = () => {
       e.stopPropagation();
       if (!canvasElement || !fabricCanvas) return;
 
-      const rect = canvasElement.getBoundingClientRect();
-      const canvasX = e.clientX - rect.left;
-      const canvasY = e.clientY - rect.top;
-
       const originalSkipTargetFind = fabricCanvas.skipTargetFind;
       fabricCanvas.skipTargetFind = false;
       const target = fabricCanvas.findTarget(e as any);
       fabricCanvas.skipTargetFind = originalSkipTargetFind;
 
-      if (target) {
+      // Only handle text editing on double-click, don't open context menu
+      if (target && (target.type === 'i-text' || target.type === 'text')) {
         fabricCanvas.setActiveObject(target);
         setSelectedObject(target as any);
         fabricCanvas.renderAll();
-        setLastRightClickPosition({ x: canvasX, y: canvasY });
-        setContextMenu({ x: e.clientX, y: e.clientY, object: target as any });
-      } else {
-        fabricCanvas.discardActiveObject();
-        setSelectedObject(null);
-        fabricCanvas.renderAll();
-        setLastRightClickPosition({ x: canvasX, y: canvasY });
-        setContextMenu({ x: e.clientX, y: e.clientY, object: undefined });
+        setTimeout(() => {
+          (target as any).enterEditing();
+          (target as any).selectAll();
+        }, 10);
       }
     };
 
@@ -1357,6 +1389,8 @@ export const WhiteboardCanvas = () => {
           )}
         </>
       )}
+
+      <AutoSaveStatus isDirty={isDirty || saveError} />
     </div>
   );
 };

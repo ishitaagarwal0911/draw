@@ -261,7 +261,12 @@ export const useCanvasEventHandlers = ({
 
         const newShape = createShape(activeShape, startPointer.x, startPointer.y, pointer.x, pointer.y);
         if (newShape) {
-          newShape.set({ opacity: 0.7 });
+          // Mark as preview shape to prevent object:added events
+          newShape.set({ 
+            opacity: 0.7,
+            selectable: false,
+            evented: false
+          });
           fabricCanvas.add(newShape);
           onCurrentShapeChange(newShape);
           fabricCanvas.renderAll();
@@ -304,10 +309,16 @@ export const useCanvasEventHandlers = ({
         fabricCanvas.setCursor("default");
       } else if (isDrawing && activeTool === "shape") {
         if (currentShape) {
-          currentShape.set({ opacity: 1 });
+          // Make the shape final by enabling selection and events
+          currentShape.set({ 
+            opacity: 1,
+            selectable: true,
+            evented: true
+          });
           fabricCanvas.renderAll();
+          fabricCanvas.setActiveObject(currentShape);
           onCurrentShapeChange(null);
-          onActivateSelect();
+          // Don't auto-switch to select - keep shape tool active
           onDirtyChange(true);
         }
         onIsDrawingChange(false);
@@ -411,7 +422,7 @@ export const useCanvasEventHandlers = ({
         }
         
         onCurrentShapeChange(null);
-        onActivateSelect();
+        // Don't auto-switch to select for text - keep text tool active
         onDirtyChange(true);
         onIsDrawingChange(false);
         onStartPointerChange(null);

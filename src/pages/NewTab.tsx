@@ -9,11 +9,13 @@ const NewTab = () => {
     
     // Handle beforeunload to warn about unsaved changes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Check if there are unsaved changes
-      const hasUnsaved = document.querySelector('[data-dirty="true"]');
-      if (hasUnsaved) {
+      // Check if there are unsaved changes by looking for the AutoSaveStatus component showing "Saving..."
+      const autoSaveStatus = document.querySelector('[data-testid="auto-save-status"]');
+      const isSaving = autoSaveStatus?.textContent?.includes('Saving');
+      
+      if (isSaving) {
         e.preventDefault();
-        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        e.returnValue = "Your changes are still being saved. Are you sure you want to leave?";
         return e.returnValue;
       }
     };

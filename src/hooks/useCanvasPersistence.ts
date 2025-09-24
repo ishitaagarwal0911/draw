@@ -3,7 +3,7 @@ import { Canvas as FabricCanvas, FabricImage } from "fabric";
 import { blobURLToDataURL, isBlobURL } from "@/utils/imageUtils";
 
 export const useCanvasPersistence = () => {
-  const saveCanvas = useCallback(async (canvas: FabricCanvas) => {
+  const saveCanvas = useCallback(async (canvas: FabricCanvas): Promise<void> => {
     try {
       // Convert any blob URLs to data URLs before saving
       const objects = canvas.getObjects();
@@ -47,6 +47,7 @@ export const useCanvasPersistence = () => {
       }
     } catch (error) {
       console.error("Failed to save canvas:", error);
+      throw error; // Re-throw to allow caller to handle the error
     }
   }, []);
 
