@@ -5,7 +5,7 @@ import { useEffect } from "react";
 const NewTab = () => {
   useEffect(() => {
     // Set page title
-    document.title = "Canvas by Recess Club";
+    document.title = "New tab";
     
     // Handle beforeunload to warn about unsaved changes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
