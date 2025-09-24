@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: "dist",
+      outDir: "draw-extension/build",
       rollupOptions: {
         input: {
           newtab: path.resolve(__dirname, "src/main.tsx"),
