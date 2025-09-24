@@ -318,7 +318,7 @@ export const useCanvasEventHandlers = ({
           fabricCanvas.renderAll();
           fabricCanvas.setActiveObject(currentShape);
           onCurrentShapeChange(null);
-          // Don't auto-switch to select - keep shape tool active
+          onActivateSelect(); // Auto-switch to select after shape creation
           onDirtyChange(true);
         }
         onIsDrawingChange(false);
@@ -376,6 +376,7 @@ export const useCanvasEventHandlers = ({
             text.enterEditing();
             text.selectAll();
           }, 50);
+          onActivateSelect(); // Auto-switch to select after text creation
         } else {
           // Fallback to click placement
           const effectiveTextColor = textColor === "transparent" ? themeDefault : textColor;
@@ -419,10 +420,10 @@ export const useCanvasEventHandlers = ({
             text.enterEditing();
             text.selectAll();
           }, 50);
+          onActivateSelect(); // Auto-switch to select after text creation
         }
         
         onCurrentShapeChange(null);
-        // Don't auto-switch to select for text - keep text tool active
         onDirtyChange(true);
         onIsDrawingChange(false);
         onStartPointerChange(null);
