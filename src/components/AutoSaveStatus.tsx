@@ -1,3 +1,4 @@
+// Auto-save status indicator component
 import { useEffect, useState } from "react";
 import { CheckCircle, Clock, AlertCircle } from "lucide-react";
 
